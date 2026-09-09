@@ -2,12 +2,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.patches import Patch
-
-STANDING = 0
-ROLLING = 1
-UNRESOLVED = 2
+from matplotlib.animation import FuncAnimation
+import time
 
 def dynamics(t, state, params):
+    """
+    Calculates the dynamics x_dot = [theta_dot, theta_ddot] for a spokeless wheel
+    
+    args:
+        t: time, ununsed since these dynamics are autonomous
+        state: Contains the state x=[theta,theta_dot] where theta is the angle away from the vertical axis of the
+                current spoke the wheel is on, i.e. the axis is always normal to the ramp
+        params: useful parameters including gravity, length of the spokes, and angle of the axis (gamma).
+
+    Returns: 
+        state_derivative: array of the derivative [theta_dot, theta double dot]
+    """
     gravity = params["gravity"]
     length = params["length"]
     gamma = params["gamma"]
@@ -21,28 +31,40 @@ def dynamics(t, state, params):
     return state_derivative
 
 def check_event(state, params):
+    """
+    Checks whether a step collision event has occured. Does this by seeing whether theta = alpha and if we are falling forward or backward
+
+    args:
+        state: Contains the state x=[theta,theta_dot]
+        params: useful parameters
+
+    returns:
+        event_bool: boolean array of whether an event occured at that step
+        updated_state: updated state values according to whether an event happened or not
+    """
     theta = state[0]
     theta_dot = state[1]
     N_spokes = params["N_spokes"]
-    two_alpha = 2*np.pi / N_spokes
-    #angle_at_two_axles_touching = np.pi/2 - two_alpha/2  #np.arcsin(length * np.sin(two_alpha) / np.sqrt(2*length**2*(1-np.cos(two_alpha))))
-    # if np.abs(np.pi/2 - theta - angle_at_two_axles_touching) <= 0.01:
-    #     theta_dot = theta_dot * np.cos(two_alpha)
-    #     theta = theta-two_alpha
+    alpha = np.pi / N_spokes
     event_bool = False
 
-    if theta >= two_alpha/2 and theta_dot > 0: # Forward Collision
-        theta = theta - two_alpha
-        theta_dot = theta_dot * np.cos(two_alpha)
+    if theta >= alpha and theta_dot > 0: # Forward Collision
+        theta = theta - 2*alpha
+        theta_dot = theta_dot * np.cos(2*alpha)
         event_bool = True
-    elif theta <= -two_alpha/2 and theta_dot < 0: # Backward Collision
-        theta = theta + two_alpha
-        theta_dot = theta_dot * np.cos(two_alpha)
+    elif theta <= -alpha and theta_dot < 0: # Backward Collision
+        theta = theta + 2*alpha
+        theta_dot = theta_dot * np.cos(2*alpha)
         event_bool = True
 
-    return event_bool, np.array([theta, theta_dot])
+    updated_state = np.array([theta, theta_dot])
+
+    return event_bool, updated_state
 
 def generate_params():
+    """
+    Generates useful parameters
+    """
     params = {
         "gravity": 9.81,  # gravity m/s^2)
         "length": 1,  # rod length (m)
@@ -53,7 +75,17 @@ def generate_params():
     return params
 
 def calculate_energy(state, params):
-    """Compute energies for a state ``(2,)`` or trajectory ``(2, N)``."""
+    """
+    Computes the kinetic and potential energy for the spokeless wheel by using the inverted pendulum model
+    
+    args:
+        state: Contains the state x=[theta,theta_dot]
+        params: useful parameters
+
+    returns:
+        kinetic_energy: Kinetic energy of the inverted pendulum calculated by T = 1/2 * mass * (length*theta_dot)^2
+        potential_energy: Gravitational potential energy of the inverted pendulum calculated via V = mglcos(theta+gamma)
+    """
     gravity = params["gravity"]
     length = params["length"]
     mass = params["mass"]
@@ -66,286 +98,359 @@ def calculate_energy(state, params):
     potential_energy = mass * gravity * length * np.cos(angle+gamma)
     return kinetic_energy, potential_energy
 
+def plot_poincare_section(x0, params, integrator, timestep=1e-5, sim_time=5.0, show=False):
+    """
+    Simulate a trajectory use a Poincare section at the event (in this case a collision of a spoke and the ramp). 
+    This collision acts as our Poincare section, only observing events that go through it. Mathematically, P(x_k) = x_{k+1}
 
-### Poincare ##########################################################################################
-def collect_poincare_pairs(
-    initial_state,
-    params,
-    integrator,
-    timestep=1e-3,
-    sim_time=5.0
-):
-    """Simulate one trajectory and collect consecutive forward-impact speeds."""
-    alpha = np.pi / params["N_spokes"]
-    initial_state = np.asarray(initial_state, dtype=float)
+    This then makes a plot of trajectories through the Poincare section, titled with different gamma and N values.
+    This also classifies whether the trajectory is "Forward Walking", "Rocking towards rest", or just at "Rest"
 
-    if not np.isclose(initial_state[0], -alpha):
-        raise ValueError("initial_state must start just after impact at theta = -alpha")
+    In the case of "Forward Walking" the floquet multiplier is calculated to determine whether this is stable or unstable.
 
-    events, time_traj, state_traj = integrator(
-        timestep,
-        sim_time,
-        initial_state,
-        dynamics,
-        params,
-        check_event
-    )
+    args:
+        x0: The initial state of the spokeless wheel
+        params: useful parameters
+        integrator: an integrator function to simulate the dynamics forward (as of right now this is only either euler or rk4)
+        timestep: integration timestep, defaults to 1e-5
+        sim_time: How long to integrate the dynamics for, defaults to 5.0
 
-    event_mask = np.asarray(events, dtype=bool).reshape(-1)
-    event_indices = np.flatnonzero(event_mask)
-
-    # check_event stores post-impact states. Positive velocity selects
-    # forward impacts and excludes backward impacts.
-    forward_indices = event_indices[state_traj[1, event_indices] > 0]
-    forward_event_times = time_traj[forward_indices]
-    forward_event_speeds = state_traj[1, forward_indices]
-
-    # The initial state is itself the first post-impact section point.
-    section_speeds = np.concatenate((
-        np.array([initial_state[1]]),
-        forward_event_speeds
-    ))
-
-    theta_dot_k = section_speeds[:-1]
-    theta_dot_next = section_speeds[1:]
-
-    return theta_dot_k, theta_dot_next, forward_event_times
-
-
-def plot_poincare_map(theta_dot_k, theta_dot_next):
-    """Plot theta_dot[k+1] = P(theta_dot[k]) and the identity line."""
-    theta_dot_k = np.asarray(theta_dot_k)
-    theta_dot_next = np.asarray(theta_dot_next)
+    returns:
+        fig: Matplotlib Figure object containing the complete Poincare plot
+        ax: Matplotlib Axes object containing the plotted points, lines, labels, and annotations
+    """
+    # Integrate Dynamics
+    events, time_traj, state_traj = integrator(timestep, sim_time, x0, dynamics, params, check_event)
+    event_indices = np.flatnonzero(events)
+    theta_dot_k = state_traj[1, event_indices] # Poincare section trajectories x_k
 
     if theta_dot_k.size == 0:
-        raise ValueError("The trajectory did not contain a forward return")
+        theta_dot_k = np.array([0])
 
-    limits = np.concatenate((theta_dot_k, theta_dot_next))
-    lower = np.min(limits)
-    upper = np.max(limits)
-    padding = max(0.05 * (upper - lower), 0.05)
-    identity_limits = [lower - padding, upper + padding]
+    # Check whether the velocity is small at end of trajectory (rest) or positive near end (walking)
+    velocity_tolerance = 0.1
+    recent_impacts = theta_dot_k[-min(5, theta_dot_k.size):]
+    at_rest = np.max(np.abs(recent_impacts)) < velocity_tolerance# Check whether max vel is small
+    forward_walking = np.all(recent_impacts > 0)
+    if at_rest:
+        classification = "Rest"
+    elif forward_walking:
+        classification = "Forward Walking"
+    else:
+        classification = "Not Yet Converged"
 
+    # Construct the Poincare points. If there is no complete return pair, show the rest reference point.
+    if theta_dot_k.size >= 2:
+        x = theta_dot_k[:-1]
+        y = theta_dot_k[1:]
+        point_label = "Poincare Points"
+    else:
+        x = np.array([0.0])
+        y = np.array([0.0])
+        point_label = "Rest Reference"
+
+    lower = min(x.min(), y.min(), 0.0) - 1
+    upper = max(x.max(), y.max(), 0.0) + 1
+    identity_limits = [lower, upper]
     fig, ax = plt.subplots()
-    ax.scatter(theta_dot_k, theta_dot_next, label="Return-map samples")
-    ax.plot(identity_limits, identity_limits, "k--", label="Identity line")
+    ax.scatter(x, y, color="blue", label=point_label)
+    ax.plot(identity_limits, identity_limits, "k--", linewidth=1, label="Identity Line")
+    ax.axvline(y[-1], color="red", linestyle=":", linewidth=1, label="Final Velocity")
+    information_text = f"Classification: {classification}"
+
+    # Floquet multiplier is only for forward walking and a good convergence of P(x_k+1) = x_k
+    if classification == "Forward Walking":
+        epsilon = 1e-3 * max(abs(y[-1]), 1.0)
+        multiplier = estimate_floquet_multiplier(y[-1], params, integrator, timestep=timestep, sim_time=sim_time, epsilon=epsilon)
+        stability = "Stable" if abs(multiplier) < 1 else "Unstable"
+        if abs(y[-1] - x[-1]) < epsilon:
+            information_text += f"\nFloquet multiplier: {multiplier:.4f}\n{stability}"
+        else:
+            information_text += f"\nSlope: {multiplier:.4f}\nCycle not fully converged"
+    else:
+        information_text += "\nFloquet multiplier: N/A"
+
+    ax.text(0.02, 0.98, information_text, transform=ax.transAxes, ha="left", va="top", bbox={"facecolor": "white", "alpha": 0.8})
     ax.set_xlim(identity_limits)
     ax.set_ylim(identity_limits)
-    ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel(r"$\dot{\theta}_k$")
-    ax.set_ylabel(r"$\dot{\theta}_{k+1}=P(\dot{\theta}_k)$")
-    ax.set_title("Poincare Return Map")
-    ax.grid()
+    ax.set_ylabel(r"$\dot{\theta}_{k+1}$")
+    ax.set_title(f"Gamma: {np.rad2deg(params['gamma'])}, Spokes: {params['N_spokes']}, Initial state: {x0}")
     ax.legend()
     plt.tight_layout()
-    plt.show()
+    if show == True:
+        plt.show()
 
     return fig, ax
 
 
+def estimate_floquet_multiplier(theta_dot_limit_cycle, params, integrator, timestep = 1e-3, sim_time = 1, epsilon=1e-3):
+    """
+    Estimate the Floquet multiplier of the forward-walking limit cycle using the derivative (since we are in one dimension)
 
-def evaluate_poincare_map(
-    theta_dot_k,
-    params,
-    integrator,
-    timestep=1e-3,
-    max_time=5.0
-):
+    The limit-cycle velocity is perturbed by plus and minus epsilon. Each
+    perturbed state is integrated to the next impact, and the derivative of the
+    return map is approximated by:
+        multiplier = (P(theta_dot + epsilon) - P(theta_dot - epsilon)) / (2 * epsilon)
+
+    args:
+        theta_dot_limit_cycle: walking fixed point
+        params: Model parameters
+        integrator: Integration function used to simulate each perturbed trajectory
+        timestep: Integration timestep
+        sim_time: Maximum time allowed for each perturbed trajectory
+        epsilon: Angular-velocity perturbation used for the finite difference
+
+    returns:
+        multiplier: Estimated Floquet multiplier
+    """
     alpha = np.pi / params["N_spokes"]
-    initial_state = np.array([-alpha, theta_dot_k])
+    x0_left = np.array([-alpha,theta_dot_limit_cycle - epsilon])
+    x0_right = np.array([-alpha,theta_dot_limit_cycle + epsilon])
 
-    events, _, state_traj = integrator(
-        timestep,
-        max_time,
-        initial_state,
-        dynamics,
-        params,
-        check_event
-    )
+    # Simulate trajector (THIS IS CURRENTLY A WASTE OF COMPUTE BECAUSE WE ONLY NEED THE NEXT EVENT)
+    events_left, _, state_traj_left = integrator(timestep, sim_time, x0_left, dynamics, params, check_event)
+    events_right, _, state_traj_right = integrator(timestep, sim_time, x0_right, dynamics, params, check_event)
+    indices_left = np.flatnonzero(events_left)
+    indices_right = np.flatnonzero(events_right)
 
-    event_indices = np.flatnonzero(events)
+    # Ignore an event at the initial state, if present.
+    indices_left = indices_left[indices_left > 0]
+    indices_right = indices_right[indices_right > 0]
 
-    # Keep forward impacts
-    forward_indices = event_indices[
-        state_traj[1, event_indices] > 0
-    ]
+    # Angular velocities immediately before the next impact.
+    theta_dot_minus_left = state_traj_left[1, indices_left[0]]
+    theta_dot_minus_right = state_traj_right[1, indices_right[0]]
 
-    if len(forward_indices) == 0:
-        return None
+    multiplier = (theta_dot_minus_right - theta_dot_minus_left) / (2 * epsilon)
 
-    first_forward_impact = forward_indices[0]
+    return multiplier
 
-    return state_traj[1, first_forward_impact]
-
-def estimate_floquet_multiplier(
-    theta_dot_fixed,
-    params,
-    integrator,
-    epsilon=1e-2
-):
-    p_left = evaluate_poincare_map(
-        theta_dot_fixed - epsilon,
-        params,
-        integrator
-    )
-
-    p_right = evaluate_poincare_map(
-        theta_dot_fixed + epsilon,
-        params,
-        integrator
-    )
-
-    if p_left is None or p_right is None:
-        raise ValueError("A perturbed state did not return to the section")
-
-    derivative = (p_right - p_left) / (2 * epsilon)
-
-    return derivative
 
 ### ROA #############################################################################################
-
-def classify_trajectory(state_traj, alpha):
-    # Examine the final 20% of the complete trajectory
-    tail_start = int(0.8 * state_traj.shape[1])
-
-    theta_tail = state_traj[0, tail_start:]
-    velocity_tail = state_traj[1, tail_start:]
-
-    tolerance = 0.02
-
-    # Nearly no motion throughout the final section
-    if np.max(np.abs(velocity_tail)) < tolerance:
-        return STANDING
-
-    # Continues moving forward through approximately complete steps
-    if (np.mean(velocity_tail) > tolerance and np.ptp(theta_tail) > alpha):
-        return ROLLING
-
-    return UNRESOLVED
-
-def calculate_roa(
-    params,
-    model,
-    integrator,
-    n_theta=11,
-    n_velocity=11,
-    velocity_limit=6.0,
-    timestep=1e-3,
-    sim_time=5
-):
+def plot_roa(params, integrator, theta_dot_limits, n_theta=25, n_theta_dot=25, timestep=1e-3, sim_time=10.0, show=False):
     alpha = np.pi / params["N_spokes"]
 
-    # Physically valid initial stance angles
-    theta_values = np.linspace(
-        -alpha + 1e-6,
-        alpha - 1e-6,
-        n_theta
-    )
+    theta_values = np.linspace(-alpha, alpha, n_theta)
+    theta_dot_values = np.linspace(theta_dot_limits[0], theta_dot_limits[1], n_theta_dot)
 
-    velocity_values = np.linspace(
-        -velocity_limit,
-        velocity_limit,
-        n_velocity
-    )
+    # 0 = Rest, 1 = Rocking toward rest, 2 = Forward walking
+    classification_grid = np.zeros((n_theta_dot, n_theta), dtype=int)
 
-    roa = np.full(
-        (n_velocity, n_theta),
-        UNRESOLVED,
+    velocity_tolerance = 0.1
+
+    total_trajectories = n_theta * n_theta_dot
+    start_time = time.perf_counter()
+
+    for i, theta_dot_0 in enumerate(theta_dot_values):
+        for j, theta_0 in enumerate(theta_values):
+            x0 = np.array([theta_0, theta_dot_0])
+
+            events, time_traj, state_traj = integrator(timestep, sim_time, x0, dynamics, params, check_event)
+
+            event_indices = np.flatnonzero(events)
+            theta_dot_k = state_traj[1, event_indices]
+
+            if theta_dot_k.size == 0:
+                theta_dot_k = np.array([0])
+
+            # Check whether the velocity is small at end of trajectory (rest) and positive near end (walking)
+            velocity_tolerance = 0.1
+            recent_impacts = theta_dot_k[-min(5, theta_dot_k.size):]
+            at_rest = np.max(np.abs(recent_impacts)) < velocity_tolerance# Check whether max vel is small
+            forward_walking = np.all(recent_impacts > 0)
+            if at_rest:
+                classification_grid[i, j] = 0
+            elif forward_walking:
+                classification_grid[i, j] = 2
+            else:
+                classification_grid[i, j] = 1
+
+        completed = (i + 1) * n_theta
+        remaining = total_trajectories - completed
+        elapsed_time = time.perf_counter() - start_time
+        average_time = elapsed_time / completed
+        estimated_remaining_time = average_time * remaining
+        percent_complete = 100 * completed / total_trajectories
+
+        print(f"Completed {completed}/{total_trajectories} trajectories ({percent_complete:.1f}%) | Remaining: {remaining} | Elapsed: {elapsed_time / 60:.1f} min | ETA: {estimated_remaining_time / 60:.1f} min", flush=True)
+
+    total_time = time.perf_counter() - start_time
+    print(f"ROA calculation complete in {total_time / 60:.1f} minutes.")
+
+    colors = ["lightgray", "orange", "green"]
+    labels = ["Rest", "Not Yet Converged", "Forward walking"]
+    colormap = ListedColormap(colors)
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    image = ax.imshow(classification_grid, origin="lower", extent=[-alpha, alpha, theta_dot_limits[0], theta_dot_limits[1]], aspect="auto", interpolation="nearest", cmap=colormap, vmin=-0.5, vmax=2.5)
+
+    colorbar = fig.colorbar(image, ax=ax, ticks=[0, 1, 2])
+    colorbar.ax.set_yticklabels(labels)
+
+    ax.set_xlabel(r"Initial $\theta$ (rad)")
+    ax.set_ylabel(r"Initial $\dot{\theta}$ (rad/s)")
+    ax.set_title(f"Region of Attraction: Gamma = {np.rad2deg(params['gamma'])}, Spokes = {params['N_spokes']}")
+
+    plt.tight_layout()
+
+    if show == True:
+        plt.show()
+
+    return fig, ax, classification_grid
+
+########################################
+def plot_energy_roa(params, theta_dot_limits, n_theta=100, n_theta_dot=100, show=False):
+    gravity = params["gravity"]
+    length = params["length"]
+    gamma = params["gamma"]
+    alpha = np.pi / params["N_spokes"]
+
+    theta_values = np.linspace(-alpha, alpha, n_theta)
+    theta_dot_values = np.linspace(theta_dot_limits[0], theta_dot_limits[1], n_theta_dot)
+
+    # 0 = Rest / no walking, 1 = Forward walking
+    classification_grid = np.zeros((n_theta_dot, n_theta), dtype=int)
+
+    collision_factor = np.cos(2 * alpha)
+    energy_tolerance = 1e-10 * max(gravity * length, 1.0)
+
+    def potential_energy_per_mass(theta):
+        return gravity * length * np.cos(theta + gamma)
+
+    def maximum_potential_between(theta_start, theta_end):
+        lower = min(theta_start, theta_end)
+        upper = max(theta_start, theta_end)
+        potential_values = [potential_energy_per_mass(lower), potential_energy_per_mass(upper)]
+
+        # theta = -gamma is the top of the potential-energy barrier
+        if lower <= -gamma <= upper:
+            potential_values.append(gravity * length)
+
+        return max(potential_values)
+
+    potential_left = potential_energy_per_mass(-alpha)
+    potential_right = potential_energy_per_mass(alpha)
+    full_step_barrier = maximum_potential_between(-alpha, alpha)
+
+    # Check whether a nonzero forward walking fixed point exists
+    energy_gain_speed_squared = 2 * gravity / length * (np.cos(gamma - alpha) - np.cos(gamma + alpha))
+    minimum_step_speed_squared = max(0.0, 2 * (full_step_barrier - potential_left) / length**2)
+
+    if 0 < collision_factor < 1 and energy_gain_speed_squared > 0:
+        limit_cycle_speed_squared = collision_factor**2 * energy_gain_speed_squared / (1 - collision_factor**2)
+        walking_cycle_exists = limit_cycle_speed_squared > minimum_step_speed_squared
+    else:
+        limit_cycle_speed_squared = 0.0
+        walking_cycle_exists = False
+
+    for i, theta_dot_0 in enumerate(theta_dot_values):
+        for j, theta_0 in enumerate(theta_values):
+            initial_energy = 0.5 * length**2 * theta_dot_0**2 + potential_energy_per_mass(theta_0)
+
+            # Determine whether the trajectory reaches the forward collision first
+            if theta_dot_0 > 0:
+                forward_barrier = maximum_potential_between(theta_0, alpha)
+                reaches_forward_collision = initial_energy > forward_barrier + energy_tolerance
+
+            elif theta_dot_0 < 0:
+                backward_barrier = maximum_potential_between(-alpha, theta_0)
+                reaches_backward_collision = initial_energy > backward_barrier + energy_tolerance
+                reaches_forward_collision = not reaches_backward_collision
+
+            else:
+                initial_acceleration = gravity / length * np.sin(theta_0 + gamma)
+                reaches_forward_collision = initial_acceleration > 0
+
+            if reaches_forward_collision:
+                impact_speed_squared = 2 * (initial_energy - potential_right) / length**2
+                impact_speed_squared = max(0.0, impact_speed_squared)
+
+                pre_impact_speed = np.sqrt(impact_speed_squared)
+                post_impact_speed = collision_factor * pre_impact_speed
+                post_impact_energy = 0.5 * length**2 * post_impact_speed**2 + potential_left
+
+                # On a sufficiently steep slope, the potential decreases immediately from -alpha
+                no_forward_barrier = full_step_barrier - potential_left <= energy_tolerance and np.sin(gamma - alpha) > 0
+
+                if no_forward_barrier:
+                    enough_energy_for_next_step = True
+                else:
+                    enough_energy_for_next_step = post_impact_energy > full_step_barrier + energy_tolerance
+            else:
+                enough_energy_for_next_step = False
+
+            if walking_cycle_exists and reaches_forward_collision and enough_energy_for_next_step:
+                classification_grid[i, j] = 1
+            else:
+                classification_grid[i, j] = 0
+
+    colors = ["lightgray", "green"]
+    labels = ["Rest", "Forward walking"]
+    colormap = ListedColormap(colors)
+
+    theta_grid, theta_dot_grid = np.meshgrid(theta_values, theta_dot_values)
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    image = ax.pcolormesh(theta_grid, theta_dot_grid, classification_grid, shading="nearest", cmap=colormap, vmin=-0.5, vmax=1.5)
+
+    colorbar = fig.colorbar(image, ax=ax, ticks=[0, 1])
+    colorbar.ax.set_yticklabels(labels)
+
+    ax.set_xlabel(r"Initial $\theta$ (rad)")
+    ax.set_ylabel(r"Initial $\dot{\theta}$ (rad/s)")
+    ax.set_title(f"Energy-Based ROA: Gamma = {np.rad2deg(gamma)}, Spokes = {params['N_spokes']}")
+
+    plt.tight_layout()
+
+    if show == True:
+        plt.show()
+
+    return fig, ax, theta_values, theta_dot_values, classification_grid
+
+
+#########################
+
+
+def animate_pendulum(x, y, gamma, max_frames=500):
+    fig, ax = plt.subplots()
+
+    limit = 1.1 * max(np.max(np.abs(x)), np.max(np.abs(y)))
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
+    ax.set_aspect("equal")
+    ax.grid()
+
+    # Ground slopes downward to the right
+    ground_x = np.array([-limit, limit])
+    ground_y = -np.tan(gamma) * ground_x
+    ax.plot(ground_x, ground_y, color="brown", linewidth=3)
+
+    rod, = ax.plot([], [], "k-", linewidth=2)
+    mass, = ax.plot([], [], "ro", markersize=10)
+
+    frame_indices = np.linspace(
+        0,
+        len(x) - 1,
+        min(max_frames, len(x)),
         dtype=int
     )
 
-    for row, theta_dot_0 in enumerate(velocity_values):
-        for column, theta_0 in enumerate(theta_values):
-            initial_state = np.array([theta_0, theta_dot_0])
+    def update(index):
+        rod.set_data([0, x[index]], [0, y[index]])
+        mass.set_data([x[index]], [y[index]])
+        return rod, mass
 
-            integrator_result = integrator(
-                timestep,
-                sim_time,
-                initial_state,
-                model.dynamics,
-                params,
-                model.check_event
-            )
-            state_traj = integrator_result[-1]
-
-            roa[row, column] = classify_trajectory(
-                state_traj,
-                alpha
-            )
-
-    return theta_values, velocity_values, roa
-
-
-def plot_roa_sweep(
-    slopes,
-    spoke_counts,
-    model,
-    integrator,
-    n_theta=11,
-    n_velocity=11,
-    timestep=1e-5,
-    sim_time=5
-):
-    base_params = model.generate_params()
-
-    colors = ListedColormap([
-        "royalblue",   # standing
-        "darkorange",  # rolling
-        "lightgray"    # unresolved
-    ])
-
-    norm = BoundaryNorm(
-        [-0.5, 0.5, 1.5, 2.5],
-        colors.N
+    animation = FuncAnimation(
+        fig,
+        update,
+        frames=frame_indices,
+        interval=20,
+        repeat=False,
+        blit=False
     )
 
-    fig, axes = plt.subplots(
-        len(slopes),
-        len(spoke_counts),
-        figsize=(4 * len(spoke_counts), 3.5 * len(slopes)),
-        squeeze=False,
-        sharey=True
-    )
-
-    for row, gamma in enumerate(slopes):
-        for column, n_spokes in enumerate(spoke_counts):
-            params = base_params.copy()
-            params["gamma"] = gamma
-            params["N_spokes"] = n_spokes
-
-            theta_values, velocity_values, roa = calculate_roa(
-                params,
-                model,
-                integrator,
-                n_theta=n_theta,
-                n_velocity=n_velocity,
-                timestep=timestep,
-                sim_time=sim_time
-            )
-
-            ax = axes[row, column]
-
-            ax.pcolormesh(
-                np.rad2deg(theta_values),
-                velocity_values,
-                roa,
-                cmap=colors,
-                norm=norm,
-                shading="nearest"
-            )
-
-            ax.set_title(
-                f"γ={np.rad2deg(gamma):.1f}°, N={n_spokes}"
-            )
-            ax.set_xlabel("Initial θ (degrees)")
-            ax.set_ylabel("Initial θ̇ (rad/s)")
-
-    legend = [
-        Patch(color="royalblue", label="Standing"),
-        Patch(color="darkorange", label="Rolling"),
-        Patch(color="lightgray", label="Unresolved")
-    ]
-
-    fig.legend(handles=legend, loc="upper center", ncol=3)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
     plt.show()
+    return animation

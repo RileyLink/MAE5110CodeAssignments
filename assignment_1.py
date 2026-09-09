@@ -1,47 +1,258 @@
 import numpy as np
+from pathlib import Path
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import timeit
+import sys
 
 from models import spokeless_wheel as model
 # from models import bouncing_ball as model
 from integrators import explicit_euler as euler
 from integrators import rk4 as rk4
 
-
-
-#POINCARE TSET: 
+# TESTING 
 params = model.generate_params()
-alpha = np.pi / params["N_spokes"]
+gamma = 0.01
+N_spokes = 12
+params["gamma"] = gamma
+params["N_spokes"] = N_spokes
+length = params["length"]
+alpha = np.pi/params["N_spokes"]
+
+x0 = np.array([alpha,3])
+
+events, time_traj, state_traj = rk4(1e-3, 10, x0, model.dynamics, params, model.check_event)
+############# ENERGY PLOTS
+kinetic_energy, potential_energy = model.calculate_energy(state_traj, params)
+plt.figure()
+plt.plot(time_traj, potential_energy, label="Potential energy")
+plt.plot(time_traj, kinetic_energy, label="Kinetic energy")
+plt.plot(time_traj, potential_energy + kinetic_energy, label="Total energy")
+plt.xlabel("Time (s)")
+plt.ylabel("Energy (J)")
+plt.title("Energy over time")
+plt.legend()
+plt.tight_layout()
+plt.show()
+################ Animation
+theta = state_traj[0]
+time = np.linspace(0, 2, len(theta))
+x = length * np.sin(gamma + theta)
+y = length * np.cos(gamma + theta)
+
+animation = model.animate_pendulum(x, y, params["gamma"])
+
+### POINCARE
+fig, ax = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=15,show = True)
+################ PHASE PORTRAIT
+dynamics_traj = np.zeros_like(state_traj)
+for i, t in enumerate(time_traj):
+    dynamics_traj[:, i] = model.dynamics(t, state_traj[:, i], params)
+plt.figure()
+plt.plot(state_traj[0, :], dynamics_traj[0, :],label="Theta Phase Portrait")
+plt.plot(state_traj[1, :], dynamics_traj[1, :], label="Theta Dot Phase Portrait")
+plt.xlabel("State")
+plt.ylabel("Dynamics")
+plt.legend()
+plt.title("Phase Portrait")
+plt.tight_layout()
+plt.show()
+###############################################################
+
+# GAMMA AND N LOOP
+params = model.generate_params()
+N_spokes = params["N_spokes"]
+alpha = np.pi / N_spokes
+gamma = params["gamma"]
+
+gamma_values_degrees = np.array([0,5,10,20,30])
+gamma_values = np.deg2rad(gamma_values_degrees)
+N_values = np.array([6, 9, 10, 12])
+x0 = np.array([0,0])
+
+output_folder = Path("assignment_1_figures")
+output_folder.mkdir(parents=True, exist_ok=True)
+for file in output_folder.glob("*.png"):
+    file.unlink()
+
+for gamma in gamma_values:
+    for N_spokes in N_values:
+        params["gamma"] = gamma
+        params["N_spokes"] = N_spokes
+
+        filename1 = (f"poincare_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+        filename2 = (f"ROA_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+        filename3 = (f"ROA_ENERGY_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+
+        fig3, ax3, theta_values, theta_dot_values, energy_roa = model.plot_energy_roa(params, theta_dot_limits=(-3, 3), n_theta=200, n_theta_dot=200, show=False)
+        fig3.savefig(output_folder / filename3, dpi=300, bbox_inches="tight")
+        plt.close(fig3)
+
+        fig1, ax1 = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=15,show = False)
+        fig1.savefig(output_folder / filename1, dpi=300, bbox_inches="tight")
+        plt.close(fig1)
+
+        fig2, ax2, roa = model.plot_roa(params, rk4, theta_dot_limits=(-3, 3), n_theta=21, n_theta_dot=21, timestep=1e-3, sim_time=15, show=False)
+        fig2.savefig(output_folder / filename2, dpi=300, bbox_inches="tight")
+        plt.close(fig2)
+##################
+
+
+
+n_gamma = len(gamma_values)
+n_N = len(N_values)
+
+fig, axes = plt.subplots(n_gamma, n_N, figsize=(18, 4 * n_gamma), squeeze=False)
+
+for row, gamma in enumerate(gamma_values):
+    for col, N_spokes in enumerate(N_values):
+        params = model.generate_params()
+        params["gamma"] = gamma
+        params["N_spokes"] = N_spokes
+
+        initial_state = np.array([-np.pi / params["N_spokes"], 0.0])
+
+        event_indices, theta_dot_k = model.collect_poincare_pairs(initial_state, params, rk4, timestep=1e-3, sim_time=3.0)
+
+        if theta_dot_k.size < 2:
+            x = np.array([0.0])
+            y = np.array([0.0])
+        else:
+            x = theta_dot_k[:-1]
+            y = theta_dot_k[1:]
+
+        ax = axes[row, col]
+
+        ax.scatter(x, y, label="Poincaré pairs")
+        ax.axline((0, 0), slope=1, color="black", linestyle="--", label="y = x")
+        ax.axvline(x[-1], color="red", linestyle=":", linewidth=1.5, label="Final x")
+
+        ax.set_xlabel(r"$\dot{\theta}_k$")
+        ax.set_ylabel(r"$P(\dot{\theta}_k)$")
+        ax.set_title(fr"$\gamma={gamma}$, $N={N_spokes}$")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+###############
+
+#### GEMINI: 
+gamma_values = np.array([0, 5, 10, 15, 20])
+N_values = np.array([6, 8, 9, 10, 12])
+n_gamma = len(gamma_values)
+
+# Create figure with subplots: 2 metrics x 3 x-axes = 6 subplots per mu value
+fig = plt.figure(figsize=(18, 4*n_gamma))
+
+for idx, gamma in enumerate(gamma_values):
+    params = model.generate_params()
+    params["gamma"] = gamma
+    # Row for this mu value
+    base_idx = idx * 5
+
+    # --- First N Values
+    params["N_spokes"] = N_values[0]
+    initial_state = np.array([-np.pi/params["N_spokes"], 0.0])
+    event_indices, theta_dot_k = model.collect_poincare_pairs(initial_state, params, rk4, timestep=1e-3, sim_time=3.0)
+    if theta_dot_k.size < 2:
+        x = np.array([0.0])
+        y = np.array([0.0])
+    else:
+        x = theta_dot_k[:-1]
+        y = theta_dot_k[1:]
+
+    ax1 = plt.subplot(n_gamma, 2, base_idx + 1)
+    ax1.scatter(x, y)
+    ax1.axline((0, 0), slope=1, color="black", linestyle="--")
+    ax1.axvline(y[-1],color="red",linestyle=":",linewidth=1.5)
+    ax1.set_xlabel('Theta Dot K')
+    ax1.set_ylabel('P(Theta Dot K)')
+    ax1.set_title(f'{gamma}, {N_spokes}')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+
+    # --- First N Values
+    params["N_spokes"] = N_values[1]
+    initial_state = np.array([-np.pi/params["N_spokes"], 0.0])
+    event_indices, theta_dot_k = model.collect_poincare_pairs(initial_state, params, rk4, timestep=1e-3, sim_time=3.0)
+    if theta_dot_k.size < 2:
+        x = np.array([0.0])
+        y = np.array([0.0])
+    else:
+        x = theta_dot_k[:-1]
+        y = theta_dot_k[1:]
+
+    ax2 = plt.subplot(n_gamma, 6, base_idx + 1)
+    ax2.scatter(x, y)
+    ax2.plot("k--", linewidth=1)
+    ax2.axline((0, 0), slope=1, color="black", linestyle="--")
+    ax2.axvline(y[-1],color="red",linestyle=":",linewidth=1.5)
+    ax2.set_xlabel('Theta Dot K')
+    ax2.set_ylabel('P(Theta Dot K)')
+    ax2.set_title(f'{gamma}, {N_spokes}')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+
+plt.tight_layout()
+
+##############
+gamma_values = np.array([0,5,10,15,20])
+N_values = np.array([6, 8, 9, 10, 12])
+
+fig, axes = plt.subplots(5, 5, figsize=(18, 18))
+
+for row, gamma in enumerate(gamma_values):
+    for col, N in enumerate(N_values):
+        params = model.generate_params()
+        params["gamma"] = gamma
+        params["N_spokes"] = N
+        alpha = np.pi / N
+        params["alpha"] = alpha
+        initial_state = np.array([-alpha, 0.0])
+        event_indices, theta_dot_k = model.collect_poincare_pairs(initial_state, params, rk4, timestep=1e-3, sim_time=3.0)
+
+        model.plot_poincare_map(theta_dot_k, ax=axes[row, col], show=False)
+
+        ax = axes[row, col]
+
+        ax.set_title(rf"$\gamma={gamma:.3f}$, $N={N}$", fontsize=7, pad=2)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.grid(False)
+        ax.set_xlabel(r"$\dot{\theta}_k$",fontsize=7)
+        ax.set_ylabel(r"$\dot{\theta}_{k+1}$",fontsize=7,)
+        
+fig.suptitle("Poincaré Return Maps", fontsize=12)
+plt.tight_layout()
+plt.show()
+
+fig.savefig(
+    "poincare_parameter_sweep.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+
+############
+
 
 initial_state = np.array([-alpha, 0])
 
-theta_dot_k, theta_dot_next, event_times = (
-    model.collect_poincare_pairs(
-        initial_state,
-        params,
-        rk4,
-        timestep=1e-3,
-        sim_time=5.0
-    )
-)
+theta_dot_k = model.collect_poincare_pairs(initial_state, params, rk4, timestep=1e-3, sim_time=5.0)
 
-print("Forward collision times:", event_times)
+model.plot_poincare_map(theta_dot_k)
 
-model.plot_poincare_map(
-    theta_dot_k,
-    theta_dot_next
-)
-
-multiplier = model.estimate_floquet_multiplier(
-    3.4,
-    params,
-    rk4
-)
+multiplier = model.estimate_floquet_multiplier(theta_dot_k[-1], params, rk4)
 
 print("Floquet multiplier:", multiplier)
 
 print("STOP HERE")
+
+
 #TEST
 slopes = np.deg2rad([10])
 spoke_counts = [10]
@@ -98,48 +309,6 @@ x0 = [two_alpha/2-0.01, 0] # starts right near impact
 # plt.tight_layout()
 # plt.show()
 
-# def animate_pendulum(x, y, gamma, max_frames=500):
-#     fig, ax = plt.subplots()
-
-#     limit = 1.1 * max(np.max(np.abs(x)), np.max(np.abs(y)))
-#     ax.set_xlim(-limit, limit)
-#     ax.set_ylim(-limit, limit)
-#     ax.set_aspect("equal")
-#     ax.grid()
-
-#     # Ground slopes downward to the right
-#     ground_x = np.array([-limit, limit])
-#     ground_y = -np.tan(gamma) * ground_x
-#     ax.plot(ground_x, ground_y, color="brown", linewidth=3)
-
-#     rod, = ax.plot([], [], "k-", linewidth=2)
-#     mass, = ax.plot([], [], "ro", markersize=10)
-
-#     frame_indices = np.linspace(
-#         0,
-#         len(x) - 1,
-#         min(max_frames, len(x)),
-#         dtype=int
-#     )
-
-#     def update(index):
-#         rod.set_data([0, x[index]], [0, y[index]])
-#         mass.set_data([x[index]], [y[index]])
-#         return rod, mass
-
-#     animation = FuncAnimation(
-#         fig,
-#         update,
-#         frames=frame_indices,
-#         interval=20,
-#         repeat=False,
-#         blit=False
-#     )
-
-#     plt.show()
-#     return animation
-
-# animation = animate_pendulum(x, y, params["gamma"])
 
 
 
@@ -235,45 +404,3 @@ x0 = [two_alpha/2-0.01, 0] # starts right near impact
 
 # print(f"Average Euler runtime (dt={dt_largest[0]:.2e}): {runtime_euler:.4f} s")
 # print(f"Average RK4 runtime (dt={dt_largest[1]:.2e}): {runtime_rk4:.4f} s")
-
-
-# time_traj, state_traj = rk4(dt_largest[1], sim_time, x0, model.dynamics, params, model.check_event)
-# kinetic_energy, potential_energy = model.calculate_energy(state_traj, params)
-
-# plt.figure()
-# plt.plot(time_traj, potential_energy, label="Potential energy")
-# plt.plot(time_traj, kinetic_energy, label="Kinetic energy")
-# plt.plot(time_traj, potential_energy + kinetic_energy, label="Total energy")
-# plt.xlabel("Time (s)")
-# plt.ylabel("Energy (J)")
-# plt.title("Energy over time")
-# plt.legend()
-# plt.tight_layout()
-# plt.show()
-
-# # TODO: make a phase portrait plot
-# dynamics_traj = np.zeros_like(state_traj)
-
-# for i, t in enumerate(time_traj):
-#     dynamics_traj[:, i] = model.dynamics(t, state_traj[:, i], params)
-
-# plt.figure()
-# plt.plot(state_traj[0, :], dynamics_traj[0, :],label="State 1 Phase Portrait")
-# plt.plot(state_traj[1, :], dynamics_traj[1, :], label="State 2 Phase Portrait")
-# plt.xlabel("State")
-# plt.ylabel("Dynamics")
-# plt.legend()
-# plt.title("Phase Portrait")
-# plt.tight_layout()
-# plt.show()
-
-# plt.figure()
-# plt.plot(state_traj[0,:], model.dynamics(
-#         time_traj[0], state_traj[:,:], params)[0,:], label = "Angle Phase Portrait")
-# plt.plot(state_traj[1,:], model.dynamics(
-#         time_traj[0], state_traj[:,:], params)[1,:], label = "Velocity Phase Portrait")
-# plt.xlabel("Pendulum State x")
-# plt.ylabel("Pendulum Dynamics f(x)")
-# plt.legend()
-# plt.tight_layout()
-# plt.show()
