@@ -10,15 +10,18 @@ from integrators import explicit_euler as euler
 from integrators import rk4 as rk4
 
 # TESTING 
+output_folder = Path("assignment_1_figures")
+output_folder.mkdir(parents=True, exist_ok=True)
+
 params = model.generate_params()
-gamma = 0.01
-N_spokes = 12
+gamma = np.deg2rad(0)
+N_spokes = 9
 params["gamma"] = gamma
 params["N_spokes"] = N_spokes
 length = params["length"]
 alpha = np.pi/params["N_spokes"]
 
-x0 = np.array([alpha,3])
+x0 = np.array([0,3])
 
 events, time_traj, state_traj = rk4(1e-3, 10, x0, model.dynamics, params, model.check_event)
 ############# ENERGY PLOTS
@@ -32,17 +35,22 @@ plt.ylabel("Energy (J)")
 plt.title("Energy over time")
 plt.legend()
 plt.tight_layout()
+filename_energy = (f"Energy_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+#plt.savefig(output_folder / filename_energy, dpi=300, bbox_inches="tight")
 plt.show()
+
 ################ Animation
 theta = state_traj[0]
 time = np.linspace(0, 2, len(theta))
 x = length * np.sin(gamma + theta)
 y = length * np.cos(gamma + theta)
-
 animation = model.animate_pendulum(x, y, params["gamma"])
 
 ### POINCARE
-fig, ax = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=15,show = True)
+fig, ax = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=20,show = True)
+filename_poincare = (f"poincareTEST_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+fig.savefig(output_folder / filename_poincare, dpi=300, bbox_inches="tight")
+
 ################ PHASE PORTRAIT
 dynamics_traj = np.zeros_like(state_traj)
 for i, t in enumerate(time_traj):
@@ -55,8 +63,10 @@ plt.ylabel("Dynamics")
 plt.legend()
 plt.title("Phase Portrait")
 plt.tight_layout()
+filename_phase = (f"Phase_portrait_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
+#plt.savefig(output_folder / filename_phase, dpi=300, bbox_inches="tight")
 plt.show()
-###############################################################
+##############################################################
 
 # GAMMA AND N LOOP
 params = model.generate_params()
@@ -68,11 +78,6 @@ gamma_values_degrees = np.array([0,5,10,20,30])
 gamma_values = np.deg2rad(gamma_values_degrees)
 N_values = np.array([6, 9, 10, 12])
 x0 = np.array([0,0])
-
-output_folder = Path("assignment_1_figures")
-output_folder.mkdir(parents=True, exist_ok=True)
-for file in output_folder.glob("*.png"):
-    file.unlink()
 
 for gamma in gamma_values:
     for N_spokes in N_values:
@@ -87,13 +92,13 @@ for gamma in gamma_values:
         fig3.savefig(output_folder / filename3, dpi=300, bbox_inches="tight")
         plt.close(fig3)
 
-        fig1, ax1 = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=15,show = False)
-        fig1.savefig(output_folder / filename1, dpi=300, bbox_inches="tight")
-        plt.close(fig1)
+        # fig1, ax1 = model.plot_poincare_section(x0, params, rk4, timestep=1e-3, sim_time=15,show = False)
+        # fig1.savefig(output_folder / filename1, dpi=300, bbox_inches="tight")
+        # plt.close(fig1)
 
-        fig2, ax2, roa = model.plot_roa(params, rk4, theta_dot_limits=(-3, 3), n_theta=21, n_theta_dot=21, timestep=1e-3, sim_time=15, show=False)
-        fig2.savefig(output_folder / filename2, dpi=300, bbox_inches="tight")
-        plt.close(fig2)
+        # fig2, ax2, roa = model.plot_roa(params, rk4, theta_dot_limits=(-3, 3), n_theta=21, n_theta_dot=21, timestep=1e-3, sim_time=15, show=False)
+        # fig2.savefig(output_folder / filename2, dpi=300, bbox_inches="tight")
+        # plt.close(fig2)
 ##################
 
 
