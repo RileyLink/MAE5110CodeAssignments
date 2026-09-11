@@ -13,8 +13,8 @@ from integrators import rk4 as rk4
 output_folder = Path("assignment_1_figures")
 output_folder.mkdir(parents=True, exist_ok=True)
 params = model.generate_params()
-gamma = np.deg2rad(0)
-N_spokes = 9
+gamma = np.deg2rad(10)
+N_spokes = 10
 params["gamma"] = gamma
 params["N_spokes"] = N_spokes
 length = params["length"]
@@ -64,7 +64,6 @@ plt.tight_layout()
 filename_phase = (f"Phase_portrait_gamma_{np.rad2deg(gamma):.1f}_spokes_{N_spokes:02d}.png")
 #plt.savefig(output_folder / filename_phase, dpi=300, bbox_inches="tight")
 plt.show()
-
 
 ########################## GAMMA AND N LOOPS FOR ROA, POINCARE, MAIN STUFF HERE #####################################
 

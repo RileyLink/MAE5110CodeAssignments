@@ -325,7 +325,6 @@ def plot_roa(params, integrator, theta_dot_limits, n_theta=25, n_theta_dot=25, t
 
     return fig, ax, classification_grid
 
-
 def plot_energy_roa(params, theta_dot_limits, n_theta=100, n_theta_dot=100, show=False, max_collisions=100):
     """
     Calculate and plot an energy-based approximation of the region of attraction 
@@ -334,9 +333,6 @@ def plot_energy_roa(params, theta_dot_limits, n_theta=100, n_theta_dot=100, show
     Classification values:
         0: Rest or no sustained forward walking
         1: Forward walking
-
-    One drawback of this model is that it classifies trajectories off its initial state and therefore cannot see the case
-    where you start going backwards and then rock back to going forwards, and eventually walking
 
     args:
         params: Model parameters
@@ -353,180 +349,139 @@ def plot_energy_roa(params, theta_dot_limits, n_theta=100, n_theta_dot=100, show
         theta_dot_values: Array of initial angular-velocity values used for the grid
         classification_grid: Integer array containing the predicted outcome of each initial condition
     """
+    # Initial Setup
     gravity = params["gravity"]
     length = params["length"]
     gamma = params["gamma"]
     alpha = np.pi / params["N_spokes"]
-
     theta_values = np.linspace(-alpha, alpha, n_theta)
     theta_dot_values = np.linspace(theta_dot_limits[0], theta_dot_limits[1], n_theta_dot)
 
     # 0 = Rest / no walking, 1 = Forward walking
     classification_grid = np.zeros((n_theta_dot, n_theta), dtype=int)
 
-    collision_factor = np.cos(2 * alpha)
-    energy_tolerance = 1e-10 * max(gravity * length, 1.0)
+    # OUTERMOST LOOP: Checking gamma < alpha condition
+    if gamma < alpha:
+        collision_factor = np.cos(2 * alpha)
+        def potential_energy(theta):
+            return gravity*length*np.cos(theta+gamma)
 
-    def potential_energy_per_mass(theta):
-        return gravity * length * np.cos(theta + gamma)
+        # Omega values determine threshold for enough energy to take either a forward or backward step
+        omega_1 = np.sqrt((2*gravity/length)*(1-np.cos(alpha-gamma)))
+        omega_2 = -np.sqrt((2*gravity/length)*(1-np.cos(alpha+gamma)))
+        energy_factor = (4*gravity / length)*np.sin(gamma)*np.sin(alpha)
 
-    def maximum_potential_between(theta_start, theta_end):
-        lower = min(theta_start, theta_end)
-        upper = max(theta_start, theta_end)
-        potential_values = [potential_energy_per_mass(lower), potential_energy_per_mass(upper)]
-
-        # theta = -gamma is the top of the potential-energy barrier
-        if lower <= -gamma <= upper:
-            potential_values.append(gravity * length)
-
-        return max(potential_values)
-
-    potential_left = potential_energy_per_mass(-alpha)
-    potential_right = potential_energy_per_mass(alpha)
-    full_step_barrier = maximum_potential_between(-alpha, alpha)
-
-    # Check whether a nonzero forward walking fixed point exists
-    energy_gain_speed_squared = 2 * gravity / length * (np.cos(gamma - alpha) - np.cos(gamma + alpha))
-    minimum_step_speed_squared = max(0.0, 2 * (full_step_barrier - potential_left) / length**2)
-
-    if 0 < collision_factor < 1 and energy_gain_speed_squared > 0:
-        limit_cycle_speed_squared = collision_factor**2 * energy_gain_speed_squared / (1 - collision_factor**2)
-        walking_cycle_exists = limit_cycle_speed_squared > minimum_step_speed_squared
-    else:
-        limit_cycle_speed_squared = 0.0
-        walking_cycle_exists = False
-
-    angle_tolerance = 1e-12
-
-    def next_collision_direction(theta, theta_dot, energy):
-        """Return +1 for forward, -1 for backward, or 0 for no return."""
-        # These handle initial states placed directly on an outward-moving
-        # collision boundary.
-        if theta >= alpha - angle_tolerance and theta_dot > 0:
-            return 1
-        if theta <= -alpha + angle_tolerance and theta_dot < 0:
-            return -1
-
-        if theta_dot > 0:
-            forward_barrier = maximum_potential_between(theta, alpha)
-            margin = energy - forward_barrier
-            if margin > energy_tolerance:
-                return 1
-            if abs(margin) <= energy_tolerance:
-                return 0
-
-            # It cannot cross the upright barrier, so it turns backward.
-            return -1
-
-        if theta_dot < 0:
-            backward_barrier = maximum_potential_between(-alpha, theta)
-            margin = energy - backward_barrier
-            if margin > energy_tolerance:
-                return -1
-            if abs(margin) <= energy_tolerance:
-                return 0
-
-            # It cannot cross the upright barrier, so it turns forward.
-            return 1
-
-        acceleration = gravity / length * np.sin(theta + gamma)
-        if acceleration > 0:
-            return 1
-        if acceleration < 0:
-            return -1
-        return 0
-
-    # On a sufficiently steep slope, potential decreases immediately after a
-    # forward reset; otherwise the wheel must vault the potential barrier.
-    no_forward_barrier = (
-        full_step_barrier - potential_left <= energy_tolerance
-        and np.sin(gamma - alpha) > 0
-    )
-
-    for i, theta_dot_0 in enumerate(theta_dot_values):
-        for j, theta_0 in enumerate(theta_values):
-            theta = theta_0
-            theta_dot = theta_dot_0
-
-            # Follow the exact energy map through both forward and backward
-            # impacts. This avoids treating an initial backward step as rest.
-            for _ in range(max_collisions):
-                energy = (
-                    0.5 * length**2 * theta_dot**2
-                    + potential_energy_per_mass(theta)
-                )
-                direction = next_collision_direction(theta, theta_dot, energy)
-
-                # The separatrix approaches the upright equilibrium and never
-                # reaches another collision.
-                if direction == 0:
-                    break
-
-                impact_potential = (
-                    potential_right if direction > 0 else potential_left
-                )
-                impact_speed_squared = max(
-                    0.0,
-                    2 * (energy - impact_potential) / length**2
-                )
-                pre_impact_speed = direction * np.sqrt(impact_speed_squared)
-                post_impact_speed = collision_factor * pre_impact_speed
-
-                if direction > 0:
-                    # The new stance begins at theta = -alpha.
-                    theta = -alpha
-                    theta_dot = post_impact_speed
-                    post_impact_energy = (
-                        0.5 * length**2 * theta_dot**2 + potential_left
-                    )
-
-                    if no_forward_barrier:
-                        enough_energy_for_next_step = True
+        # Determines if we are going to hit +alpha or -alpha first
+        def where_will_IC_hit_next(theta0,theta_dot0):
+            no_next_impact = False
+            total_energy0 = 0.5*length**2 * theta_dot0**2 + potential_energy(theta0)
+            if theta_dot0 > 0: # Moving forward
+                if theta0 > -gamma: # Past vertical
+                    theta = alpha
+                else:
+                    if np.abs(total_energy0 - gravity*length) < 1e-5:
+                        no_next_impact = True
+                        theta = 0
+                    elif total_energy0 > gravity*length: # Energy gets us over vertical
+                        theta = alpha
                     else:
-                        enough_energy_for_next_step = (
-                            post_impact_energy
-                            > full_step_barrier + energy_tolerance
-                        )
+                        theta = -alpha
+            elif theta_dot0 < 0: # Moving backwards
+                if theta0 < -gamma: # Behind vertical
+                    theta = -alpha
+                else:
+                    if np.abs(total_energy0 - gravity*length) < 1e-5:
+                            no_next_impact = True
+                            theta = 0
+                    elif total_energy0 > gravity*length: # energy gets us behind the vertical
+                        theta = -alpha
+                    else:
+                        theta = alpha
+            else:
+                # IC has theta_dot0 = 0
+                theta_ddot0 = gravity / length * np.sin(theta0 + gamma)
+                if theta_ddot0 < 1e-8:
+                    no_next_impact = True
+                    theta = 0
+                elif theta_ddot0 > 0:
+                    theta = alpha
+                else:
+                    theta = -alpha
+                    
+            # Now solve for what theta_dot is after new collision
+            if theta == alpha:
+                theta_dot_minus = np.sqrt(max(0,(2/length**2) * (total_energy0-gravity*length*np.cos(theta+gamma))))
+                theta_dot = theta_dot_minus * collision_factor
+            else:
+                theta_dot_minus = -np.sqrt(max(0,(2/length**2) * (total_energy0-gravity*length*np.cos(theta+gamma))))
+                theta_dot = theta_dot_minus * collision_factor
 
-                    if walking_cycle_exists and enough_energy_for_next_step:
-                        classification_grid[i, j] = 1
+            return no_next_impact, theta, theta_dot
 
-                    # If this forward post-impact state cannot clear the next
-                    # barrier, subsequent rocking only loses more energy.
-                    break
+        # Determines next collision velocity according to omega values
+        def next_collision_velocity(theta_dot):
+            no_next_impact = False
+            if theta_dot > omega_1:
+                theta_dot = collision_factor*np.sqrt(theta_dot**2+energy_factor)
+            elif theta_dot < omega_2:
+                theta_dot = -collision_factor*np.sqrt(theta_dot**2-energy_factor)
+            elif theta_dot == omega_1 or theta_dot == omega_2:
+                no_next_impact = True
+            else:
+                theta_dot = -collision_factor*theta_dot
+            return no_next_impact, theta_dot
 
-                # A backward impact starts the next stance at theta = +alpha.
-                # Continue iterating: it may take more backward steps, turn
-                # around, and eventually enter the forward-walking basin.
-                theta = alpha
-                theta_dot = post_impact_speed
+        # INNER LOOPS ITERATING OVER INITIAL CONDITIONS
+        for j, theta in enumerate(theta_values):
+            for i, theta_dot in enumerate(theta_dot_values):
+                no_next_impact, theta_next, theta_dot_next = where_will_IC_hit_next(theta,theta_dot)
+                if no_next_impact:
+                    classification_grid[i, j] = 0   # If no_next_impact we are at rest
+                    continue
 
+                # Iterate finding next collision velocity 100 times to determine if we continue walking or go to rest
+                theta_dot_array = np.zeros(max_collisions+1)
+                theta_dot_array[0] = theta_dot_next
+                for k in range(max_collisions):
+                    no_next_impact, theta_dot_array[k+1] = next_collision_velocity(theta_dot_array[k])
+                    if no_next_impact:
+                        break
+
+                if no_next_impact:
+                    classification_grid[i, j] = 0    # If no_next_impact we are at rest
+                    
+                # Take last 6 entries to classify
+                last_theta_dots = theta_dot_array[-6:]
+                if np.all(last_theta_dots > omega_1):
+                    classification_grid[i, j] = 1
+                else: 
+                    classification_grid[i, j] = 0        
+
+    # Back to outerloop classifying based on gamma
+    elif gamma == 0: # Flat surface, always go to rest
+        classification_grid = np.zeros((n_theta_dot, n_theta), dtype=int)
+    else: # Gamma > alpha so always walking
+        classification_grid = np.ones((n_theta_dot, n_theta), dtype=int)
+
+    # Plotting Stuff
     colors = ["lightgray", "green"]
     labels = ["Rest", "Forward walking"]
     colormap = ListedColormap(colors)
-
     theta_grid, theta_dot_grid = np.meshgrid(theta_values, theta_dot_values)
-
     fig, ax = plt.subplots(figsize=(9, 7))
-
     image = ax.pcolormesh(theta_grid, theta_dot_grid, classification_grid, shading="nearest", cmap=colormap, vmin=-0.5, vmax=1.5)
-
     colorbar = fig.colorbar(image, ax=ax, ticks=[0, 1])
     colorbar.ax.set_yticklabels(labels)
-
     ax.set_xlabel(r"Initial $\theta$ (rad)")
     ax.set_ylabel(r"Initial $\dot{\theta}$ (rad/s)")
     ax.set_title(f"Energy-Based ROA: Gamma = {np.rad2deg(gamma)}, Spokes = {params['N_spokes']}")
-
     plt.tight_layout()
-
     if show == True:
         plt.show()
 
     return fig, ax, theta_values, theta_dot_values, classification_grid
 
-#########################
-
+##################################################################################################
 
 def animate_pendulum(x, y, gamma, max_frames=500):
     """
