@@ -296,7 +296,7 @@ If one of these test cases is found where it produces an error please let me kno
 
 Finally, as mentioned on the assignment_1.md file, the brute force ROA is SLOW!!! However, there is a much better way of calculating the ROA using energy based methods. Conceptually, we can think of this as classifying whether or not there is enough energy in the system to reach the forward collision with the speed needed to complete another step.
 
-The mathematics for this was referenced from [text](https://underactuated.mit.edu/simple_legs.html#rimless_wheel) by Russ Tedrake.
+The mathematics for this was referenced from [text](https://underactuated.mit.edu/simple_legs.html#rimless_wheel) by Russ Tedrake. However, since the model I used chose theta to vary from the non-vertical axis, i.e. the vertical axis was always at $-\gamma$ and collisions occur at $\theta = \pm \alpha$ then the math varies slightly.
 
 Below are images of the energy based ROA contrasted with the brute force. The brute force plots have the not yet converged possibility as a way to distinguish them.
 
