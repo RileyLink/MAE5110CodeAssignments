@@ -2,11 +2,13 @@ import numpy as np
 def check_event(state):
     height = state[0]
     vel = state[1]
+    event_bool = False
     if height <= 0 and vel < 0: 
         height = 0
         vel = -state[1]
+        event_bool = True
 
-    return np.array([height, vel])
+    return event_bool, np.array([height, vel])
 
 def dynamics(t, state, params):
     gravity = params["gravity"]
