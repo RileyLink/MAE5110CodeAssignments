@@ -1,11 +1,84 @@
 from pathlib import Path
 
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
+from integrators import rk4 as integrator
 from matplotlib.animation import FuncAnimation, PillowWriter
-
 from models import inverted_pendulum_walker as model
 
+params = model.generate_params()
+mass = params["mass"]
+gravity = params["gravity"]
+length = params["length"]
+K_p = 0.01
+K_d = 0.01
+tau_lower_bound = -0.1*mass*gravity*length
+tau_upper_bound = 0.05*mass*gravity*length
+timestep = 1e-4
+one_time_step = timestep
+sim_time = 3
+x0 = [0.0,2.0]
+current_state = x0.copy()
+sim_steps = int(sim_time / timestep)
+state_traj = np.zeros((sim_steps+1,2))
+state_traj[0,:] = x0
+time_traj = np.zeros(sim_steps)
+completed_steps = 0
+for step in range(sim_steps):
+    events, local_time, local_state = integrator(timestep,one_time_step,current_state,model.dynamics,params,model.event_guard,model.event_dynamics)
+    time_traj[step] = (step + 1) * timestep
+    current_state = local_state[:,-1]
+    state_traj[step+1, :] = current_state
+    new_ankle_torque = -mass*gravity*length*np.sin(current_state[0])-K_p*current_state[0]-K_d*current_state[1]
+    if new_ankle_torque < tau_lower_bound or new_ankle_torque > tau_upper_bound:
+        if new_ankle_torque > 0:
+            params["ankle_torque"] = tau_upper_bound
+        else:
+            params["ankle_torque"] = tau_lower_bound
+    params["ankle_torque"] = new_ankle_torque
+
+    if events[-1]: # Collision occurs, update alpha
+        completed_steps += 1
+        new_angle_of_attack = np.pi/7
+        if new_angle_of_attack < np.pi/8 or new_angle_of_attack > np.pi/7:
+            print("Angle of attack exceeded limits!")
+            sys.exit()
+        params["angle_of_attack"] = new_angle_of_attack
+
+
+
+model.animate(state_traj.T,time_traj,params,timestep,completed_steps)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sys.exit()
+
+###################################################### VISUAL EXAMPLE BELOW #####################################################
 # Fixed controls for this visualization example.
 params = {
     "gravity": 9.81,  # m/s^2
@@ -42,6 +115,8 @@ for step, t in enumerate(time_traj[:-1]):
 
 time_traj = time_traj[: step + 2]
 state_traj = state_traj[:, : step + 2]
+
+
 
 fig, ax = plt.subplots(figsize=(8, 5), layout="constrained")
 

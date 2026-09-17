@@ -6,28 +6,106 @@ of those functions; it draws a supplied state without advancing the simulation.
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
+from matplotlib.animation import FuncAnimation, PillowWriter
 
 
 def generate_params():
-    pass
+    """
+    Generates useful parameters
+    """
+    params = {
+        "gravity": 9.81,  # gravity m/s^2)
+        "length": 1,  # rod length (m)
+        "mass": 1,  # point mass at end of rod (kg)
+        "incline": 0.06,
+        "N_spokes": 10,
+        "angle_of_attack": np.pi/8,
+        "ankle_torque": 0
+    }
+    return params
 
 
 def dynamics(t, state, params):
-    # TODO: implement the state derivative.
-    return np.array([0.0, 0.0])
+    """
+    Calculates the dynamics x_dot = [theta_dot, theta_ddot] for a spokeless wheel
+    
+    args:
+        t: time, ununsed since these dynamics are autonomous
+        state: Contains the state x=[theta,theta_dot] where theta = 0 is the vertical axis
+        params: useful parameters including gravity, length of the spokes, and angle of the axis (incline).
 
+    Returns: 
+        state_derivative: array of the derivative [theta_dot, theta double dot]
+    """
+    gravity = params["gravity"]
+    length = params["length"]
+    ankle_torque = params["ankle_torque"]
+    mass = params["mass"]
+
+    theta = state[0]       # Angle from world vertical
+    theta_dot = state[1]
+
+    theta_ddot = (gravity / length) * np.sin(theta) + ankle_torque / (mass * length**2)
+    state_derivative = np.array([theta_dot, theta_ddot])
+    return state_derivative
 
 def event_guard(previous_state, next_state, params):
-    pass
+    incline = params["incline"]
+    alpha = params["angle_of_attack"]
+
+    previous_theta = previous_state[0]
+    next_theta = next_state[0]
+    next_theta_dot = next_state[1]
+
+    # Express angles relative to the ramp normal
+    previous_relative = previous_theta - incline
+    next_relative = next_theta - incline
+
+    forward_collision = (
+        previous_relative < alpha <= next_relative
+        and next_theta_dot > 0
+    )
+
+    backward_collision = (
+        previous_relative > -alpha >= next_relative
+        and next_theta_dot < 0
+    )
+
+    return forward_collision or backward_collision
 
 
 def event_dynamics(state, params):
-    pass
+    theta = state[0]
+    theta_dot = state[1]
+
+    alpha = params["angle_of_attack"]
+
+    if theta_dot > 0:
+        # Forward collision
+        theta -= 2 * alpha
+
+    elif theta_dot < 0:
+        # Backward collision
+        theta += 2 * alpha
+
+    theta_dot *= np.cos(2 * alpha)
+
+    return np.array([theta, theta_dot])
 
 
 def calculate_energy(state, params):
-    pass
+    gravity = params["gravity"]
+    length = params["length"]
+    mass = params["mass"]
 
+    theta = state[0]
+    theta_dot = state[1]
+
+    kinetic_energy = 0.5 * mass * (length * theta_dot) ** 2
+    potential_energy = mass * gravity * length * np.cos(theta)
+
+    return kinetic_energy, potential_energy
 
 def visualize(
     state,
@@ -193,3 +271,33 @@ def visualize(
     )
     ax.set_aspect("equal", adjustable="box")
     return ax
+
+
+def animate(state_traj,time_traj,params,timestep,completed_steps):
+    fig, ax = plt.subplots(figsize=(8, 5), layout="constrained")
+
+
+    def draw_frame(index):
+        # The massless swing leg is repositioned instantaneously at each impact.
+        visualize(state_traj[:, index], params, ax=ax)
+        ax.set_title(f"t = {time_traj[index]:.2f} s")
+
+
+    # Simulate at a small timestep, but render only 25 frames per second.
+    fps = 25
+    frame_stride = round(1 / (fps * timestep))
+    frame_indices = list(range(0, time_traj.size, frame_stride))
+    if frame_indices[-1] != time_traj.size - 1:
+        frame_indices.append(time_traj.size - 1)
+
+    animation = FuncAnimation(
+        fig, draw_frame, frames=frame_indices, interval=1000 / fps, repeat=False
+    )
+    output = Path("output/assignment_2")
+    output.mkdir(parents=True, exist_ok=True)
+    animation.save(output / "walker.gif", writer=PillowWriter(fps=fps))
+
+    # To save an MP4 instead, install FFmpeg and use:
+    # animation.save(output / "walker.mp4", writer="ffmpeg", fps=fps)
+    print(f"Saved {output / 'walker.gif'} ({completed_steps} footstrikes).")
+    plt.show()
