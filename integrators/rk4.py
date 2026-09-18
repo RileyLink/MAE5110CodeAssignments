@@ -4,24 +4,10 @@ import numpy as np
 def _rk4_step(time, state, timestep, dynamics, params):
     """Perform one RK4 integration step."""
     k1 = dynamics(time, state, params)
-    k2 = dynamics(
-        time + timestep / 2,
-        state + k1 * timestep / 2,
-        params,
-    )
-    k3 = dynamics(
-        time + timestep / 2,
-        state + k2 * timestep / 2,
-        params,
-    )
-    k4 = dynamics(
-        time + timestep,
-        state + k3 * timestep,
-        params,
-    )
-    return state + (timestep / 6) * (
-        k1 + 2 * k2 + 2 * k3 + k4
-    )
+    k2 = dynamics(time + timestep / 2,state + k1 * timestep / 2,params,)
+    k3 = dynamics(time + timestep / 2,state + k2 * timestep / 2,params,)
+    k4 = dynamics(time + timestep,state + k3 * timestep,params,)
+    return state + (timestep / 6) * (k1 + 2 * k2 + 2 * k3 + k4) 
 
 
 def rk4(

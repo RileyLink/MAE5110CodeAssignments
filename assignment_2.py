@@ -1,44 +1,68 @@
 from pathlib import Path
 
 import sys
+import time
 import matplotlib.pyplot as plt
 import numpy as np
 from integrators import rk4 as integrator
 from matplotlib.animation import FuncAnimation, PillowWriter
 from models import inverted_pendulum_walker as model
 
+# CALCULATE CONTROLLER ROA IF A DATA FILE IS NOT ALREADY SAVED
+roa_path = Path("output/assignment_2/roa.npz")
+if roa_path.exists():
+    print("Extracting ROA data...")
+    roa_data = np.load(roa_path, allow_pickle=False)
+    classification_grid = roa_data["classification_grid"]
+    theta_values = roa_data["theta_values"]
+    theta_dot_values = roa_data["theta_dot_values"]
+else:
+    print("No ROA data found, generating now...")
+    params = model.generate_params()
+    params["K_p"] = 10
+    params["K_d"] = 10
+    # Calculate ROA
+    fig,ax,classification_grid, theta_values, theta_dot_values = model.plot_controller_roa(
+        (params["incline"]-params["angle_of_attack"], params["incline"]+params["angle_of_attack"]),
+        theta_dot_limits=(-1.5,1.5),
+        n_theta=100,n_theta_dot=100, 
+        params = params, 
+        sim_time = 20, 
+        timestep = 5e-4, 
+        show=True)
+    np.savez(roa_path,classification_grid=classification_grid,theta_values=theta_values,theta_dot_values=theta_dot_values)
+    fig.savefig("output/assignment_2/controller_roa.png",dpi=300,bbox_inches="tight")
+
+# Params
 params = model.generate_params()
-mass = params["mass"]
-gravity = params["gravity"]
-length = params["length"]
-K_p = 0.01
-K_d = 0.01
-tau_lower_bound = -0.1*mass*gravity*length
-tau_upper_bound = 0.05*mass*gravity*length
-timestep = 1e-4
-one_time_step = timestep
-sim_time = 3
-x0 = [0.0,2.0]
-current_state = x0.copy()
+params["K_p"] = 10
+params["K_d"] = 10
+
+timestep = 1e-3
+sim_time = 5
 sim_steps = int(sim_time / timestep)
 state_traj = np.zeros((sim_steps+1,2))
+x0 = [0,30]
 state_traj[0,:] = x0
-time_traj = np.zeros(sim_steps)
+current_state = x0.copy()
+time_traj = np.linspace(0,sim_time,sim_steps+1)
+event_traj = np.zeros(sim_steps + 1, dtype=bool)
 completed_steps = 0
+print(f"Running simulation starting at {x0}")
+first_roa = True
 for step in range(sim_steps):
-    events, local_time, local_state = integrator(timestep,one_time_step,current_state,model.dynamics,params,model.event_guard,model.event_dynamics)
-    time_traj[step] = (step + 1) * timestep
+    if model.state_is_in_roa(current_state, theta_values, theta_dot_values, classification_grid):
+        if first_roa:
+            print(f"Reached the ROA:\n Step: {step}\n State: {current_state}")
+            first_roa = False
+        params["ankle_torque"] = model.calculate_torque(current_state,params)
+    
+    local_events, local_time, local_state = integrator(timestep,timestep,current_state,model.dynamics,params,model.event_guard,model.event_dynamics)
     current_state = local_state[:,-1]
     state_traj[step+1, :] = current_state
-    new_ankle_torque = -mass*gravity*length*np.sin(current_state[0])-K_p*current_state[0]-K_d*current_state[1]
-    if new_ankle_torque < tau_lower_bound or new_ankle_torque > tau_upper_bound:
-        if new_ankle_torque > 0:
-            params["ankle_torque"] = tau_upper_bound
-        else:
-            params["ankle_torque"] = tau_lower_bound
-    params["ankle_torque"] = new_ankle_torque
+    event_traj[step + 1] = local_events[-1]
 
-    if events[-1]: # Collision occurs, update alpha
+    if local_events[-1]: # Collision occurs, update alpha
         completed_steps += 1
         new_angle_of_attack = np.pi/7
         if new_angle_of_attack < np.pi/8 or new_angle_of_attack > np.pi/7:
@@ -46,37 +70,12 @@ for step in range(sim_steps):
             sys.exit()
         params["angle_of_attack"] = new_angle_of_attack
 
-
-
+print("Simulation over, animating now...")
 model.animate(state_traj.T,time_traj,params,timestep,completed_steps)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 sys.exit()
+
 
 ###################################################### VISUAL EXAMPLE BELOW #####################################################
 # Fixed controls for this visualization example.

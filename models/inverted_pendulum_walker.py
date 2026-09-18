@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from matplotlib.animation import FuncAnimation, PillowWriter
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.animation import FuncAnimation
+import time
 
 
 def generate_params():
@@ -21,7 +25,9 @@ def generate_params():
         "incline": 0.06,
         "N_spokes": 10,
         "angle_of_attack": np.pi/8,
-        "ankle_torque": 0
+        "ankle_torque": 0,
+        "K_p": 10,
+        "K_d": 10
     }
     return params
 
@@ -106,6 +112,140 @@ def calculate_energy(state, params):
     potential_energy = mass * gravity * length * np.cos(theta)
 
     return kinetic_energy, potential_energy
+
+def calculate_torque(state,params):
+    mass = params["mass"]
+    gravity = params["gravity"]
+    length = params["length"]
+    K_p = params["K_p"]
+    K_d = params["K_d"]
+    tau_lower_bound = -0.1*mass*gravity*length
+    tau_upper_bound = 0.05*mass*gravity*length  
+    new_ankle_torque = -mass*gravity*length*np.sin(state[0])-K_p*state[0]-K_d*state[1]
+    return np.clip(new_ankle_torque,tau_lower_bound,tau_upper_bound)
+
+
+def plot_controller_roa(theta_limits,theta_dot_limits,n_theta,n_theta_dot,params,sim_time,timestep,show=False):
+    def rk4_step(time, state, timestep, dynamics, params):
+        """Perform one RK4 integration step."""
+        k1 = dynamics(time, state, params)
+        k2 = dynamics(time + timestep / 2,state + k1 * timestep / 2,params,)
+        k3 = dynamics(time + timestep / 2,state + k2 * timestep / 2,params,)
+        k4 = dynamics(time + timestep,state + k3 * timestep,params,)
+        return state + (timestep / 6) * (k1 + 2 * k2 + 2 * k3 + k4) 
+    
+    BALANCED = 0
+    FAILURE = 1
+    INCONCLUSIVE = 2
+    theta_tolerance=0.001
+    velocity_tolerance=0.001
+
+    theta_values = np.linspace(theta_limits[0], theta_limits[1], n_theta)
+    theta_dot_values = np.linspace(theta_dot_limits[0], theta_dot_limits[1], n_theta_dot)
+
+    classification_grid = np.full((n_theta_dot, n_theta),INCONCLUSIVE,dtype=int)
+
+    sim_steps = int(sim_time / timestep)
+    total_trajectories = n_theta * n_theta_dot
+    completed_trajectories = 0
+    start_time = time.perf_counter()
+
+    for i, theta_dot_0 in enumerate(theta_dot_values):
+        for j, theta_0 in enumerate(theta_values):
+            params = generate_params()
+            current_state = np.array([theta_0,theta_dot_0])
+            outcome = INCONCLUSIVE
+
+            for step in range(sim_steps):
+                params["ankle_torque"] = calculate_torque(current_state,params)
+
+                current_time = step * timestep
+                next_state = rk4_step(current_time,current_state,timestep,dynamics,params)
+
+                if event_guard(current_state,next_state,params):
+                    outcome = FAILURE
+                    break
+
+                current_state = next_state
+                if abs(current_state[0]) <= theta_tolerance and abs(current_state[1]) <= velocity_tolerance:
+                    outcome = BALANCED
+                    break
+
+            classification_grid[i,j] = outcome
+            completed_trajectories += 1
+
+        elapsed = time.perf_counter() - start_time
+        average_time = elapsed / completed_trajectories
+        remaining = total_trajectories - completed_trajectories
+        eta = average_time * remaining
+        percent = 100 * completed_trajectories / total_trajectories
+
+        print(
+            f"Completed {completed_trajectories}/{total_trajectories} "
+            f"({percent:.1f}%) | Elapsed: {elapsed:.1f} s | "
+            f"ETA: {eta:.1f} s",
+            flush=True,
+        )
+
+    elapsed = time.perf_counter() - start_time
+    print(f"RoA calculation completed in {elapsed:.1f} seconds.")
+
+    colors = ["green", "orange", "lightgray"]
+    labels = ["Captured", "Collision/failure", "Inconclusive"]
+
+    fig, ax = plt.subplots(
+        figsize=(9, 7),
+        layout="constrained",
+    )
+
+    image = ax.imshow(
+        classification_grid,
+        origin="lower",
+        extent=[
+            theta_values[0],
+            theta_values[-1],
+            theta_dot_values[0],
+            theta_dot_values[-1],
+        ],
+        aspect="auto",
+        interpolation="nearest",
+        cmap=ListedColormap(colors),
+        vmin=-0.5,
+        vmax=2.5,
+    )
+
+    colorbar = fig.colorbar(
+        image,
+        ax=ax,
+        ticks=[BALANCED, FAILURE, INCONCLUSIVE],
+    )
+    colorbar.ax.set_yticklabels(labels)
+
+    ax.set_xlabel(r"Initial $\theta$ (rad)")
+    ax.set_ylabel(r"Initial $\dot{\theta}$ (rad/s)")
+    ax.set_title("Approximate region of attraction")
+
+    if show:
+        plt.show()
+
+    return fig, ax, classification_grid,theta_values, theta_dot_values  
+
+def state_is_in_roa(state, theta_values, theta_dot_values, classification_grid):
+    theta, theta_dot = state
+
+    # States outside the sampled grid are not considered inside the RoA.
+    if not theta_values[0] <= theta <= theta_values[-1]:
+        return False
+
+    if not theta_dot_values[0] <= theta_dot <= theta_dot_values[-1]:
+        return False
+
+    theta_index = np.argmin(np.abs(theta_values - theta))
+    theta_dot_index = np.argmin(np.abs(theta_dot_values - theta_dot))
+
+    return (classification_grid[theta_dot_index, theta_index] == 0)  
+
+#####################################################################################################################
 
 def visualize(
     state,
