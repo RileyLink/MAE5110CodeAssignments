@@ -5,9 +5,14 @@ Examples:
     uv run python assignment_2/codes/assignment_2.py --theta -0.2 --omega 1 --show
     uv run python assignment_2/codes/assignment_2.py --theta 0.03 --omega 0 --no-animation
 
+Reproduction commands and the script dependency order: assignment_2/README.md.
+The root command ``uv run python assignment_2.py`` invokes this same program.
+
 Angles are radians. Arbitrary finite initial states are accepted, but recovery
 is not guaranteed outside the designed RoA/section domain. Failed and timed-out
 runs are saved with their actual status; no state is snapped to equilibrium.
+Landing-angle and torque bounds are inclusive. Capture excludes both curved
+RoA boundaries. Standing hides the swing leg; it never commands alpha=0.
 """
 
 import argparse
@@ -22,12 +27,20 @@ from models import inverted_pendulum_walker as model
 
 ALPHA_MIN, ALPHA_MAX = np.pi / 8, np.pi / 7
 KP, KD = 240.0, 80.0
-CAPTURE_MARGIN = 1e-10
+CAPTURE_MARGIN = 1e-10  # rad/s: exclude numerical ambiguity at capture boundaries.
 STANDING_TOLERANCE = 1e-6
+EVENT_BISECTIONS = 35
 
 
 def capture_bounds(theta, params):
-    """Analytical boundary velocities for normalized torque limits -.1, +.05."""
+    """Lower/upper recoverable angular velocities at each stance angle.
+
+    Integrate omega*domega/dtheta = (g/length)*(sin(theta)+u) at the two
+    constant normalized torques u=tau/(mass*gravity*length)=-.1 and +.05.
+    The signed square roots give stable manifolds of the tilted equilibria
+    asin(.1) and -asin(.05); their interior is the standing capture region.
+    See report Sections 2.1-2.2 for the derivation and gain assumptions.
+    """
     theta = np.asarray(theta)
     q = params["gravity"] / params["length"]
     left, right = -np.arcsin(0.05), np.arcsin(0.1)
@@ -39,7 +52,12 @@ def capture_bounds(theta, params):
 
 
 def in_capture(state, params):
-    """Use only the angle domain covered by the standing-controller proof."""
+    """Capture in the proven symmetric angle domain, with strict velocity bounds.
+
+    CAPTURE_MARGIN is a numerical velocity buffer, not the standing tolerance
+    or a robustness guarantee. Exact boundary orbits approach tilted equilibria.
+    The report plots a subset of this symmetric angle domain.
+    """
     theta, omega = state
     lower, upper = capture_bounds(theta, params)
     return (
@@ -50,7 +68,11 @@ def in_capture(state, params):
 
 
 def standing_torque(state, params):
-    """Saturated torque for a state (2,) or a batch of states (2, N)."""
+    """Cancel gravity, add stabilizing PD acceleration, then clip ankle torque.
+
+    Unsaturated dynamics are theta'' + KD*theta' + KP*theta = 0. Torque bounds
+    are inclusive. Accept a state (2,) or a batch of states (2, N).
+    """
     theta, omega = state
     m, g, length = params["mass"], params["gravity"], params["length"]
     scale = m * g * length
@@ -67,13 +89,21 @@ def uniform_action(omega, params):
 
     Beyond Omega, continue with the largest angle as an explicit extension;
     the report's minimum-step validation applies only inside [0, Omega].
+    Actions are angles in radians, not integer indices. Interpolating angles
+    would define a different policy and require a new stopping-count check.
     """
     limit = np.sqrt(2 * params["gravity"] / params["length"])
     return np.where(np.asarray(omega) < limit / 4, ALPHA_MIN, ALPHA_MAX)
 
 
 def post_impact(state, alpha, params):
-    """Predict forward touchdown from conserved passive stance energy."""
+    """Predict forward touchdown from conserved passive stance energy.
+
+    ``valid`` means the proposed guard lies ahead, touchdown speed is real and
+    positive, and the passive orbit can clear upright if it must cross it.
+    It is a geometric/energy feasibility check, not the Froude design limit.
+    Callers search alpha only in the allowed inclusive interval.
+    """
     theta, omega = state
     q, gamma = params["gravity"] / params["length"], params["incline"]
     speed_squared = omega**2 + 2 * q * (np.cos(theta) - np.cos(gamma + alpha))
@@ -156,9 +186,14 @@ def rk4(state, time, dt, params, standing=False):
 
 
 def locate_event(state, time, dt, params, predicate):
-    """Bisect a bracketed passive event to avoid stepping across impact resets."""
+    """Bisect a bracketed passive event to avoid stepping across impact resets.
+
+    35 halvings reduce a default 0.001 s bracket to about 2.9e-14 s. This only
+    bounds localization within the RK4 trajectory; it is not a bound on the
+    integration error. Timestep refinement tests the latter separately.
+    """
     lo, hi = 0.0, dt
-    for _ in range(35):
+    for _ in range(EVENT_BISECTIONS):
         middle = (lo + hi) / 2
         if predicate(rk4(state, time, middle, params)):
             hi = middle
@@ -168,7 +203,13 @@ def locate_event(state, time, dt, params, predicate):
 
 
 def simulate(initial_state=(0.0, 4.0), *, dt=0.001, duration=15.0, max_steps=100):
-    """Return an event-resolved trajectory with world foot positions and status."""
+    """Walk passively to capture, then balance with continuous ankle feedback.
+
+    Before capture, localize the earliest section, touchdown, or capture event.
+    After capture, latch standing control and disable further footstrikes.
+    ``held_since`` tracks uninterrupted time below the standing tolerances.
+    A finite timeout remains necessary for states not guaranteed to recover.
+    """
     state = np.asarray(initial_state, dtype=float).copy()
     if state.shape != (2,) or not np.all(np.isfinite(state)):
         raise ValueError(
@@ -231,6 +272,8 @@ def simulate(initial_state=(0.0, 4.0), *, dt=0.001, duration=15.0, max_steps=100
             next_state = rk4(state, time, h, params, standing)
             kind = None
             if not standing:
+                # Each candidate stores (time within this step, event type, state).
+                # Selecting the earliest avoids applying an impact after capture.
                 candidates = []
                 if state[0] < 0 <= next_state[0] and next_state[1] > 0:
                     eh, ey = locate_event(state, time, h, params, lambda y: y[0] >= 0)
@@ -274,6 +317,7 @@ def simulate(initial_state=(0.0, 4.0), *, dt=0.001, duration=15.0, max_steps=100
                     }
                 )
             if not standing and in_capture(state, params):
+                # Retain the last allowed alpha; the swing leg is held clear.
                 standing, capture_time = True, time
             record()
             if np.cos(state[0] - params["incline"]) <= 0:
@@ -288,6 +332,18 @@ def simulate(initial_state=(0.0, 4.0), *, dt=0.001, duration=15.0, max_steps=100
                     "Maximum permitted footstrikes reached without capture.",
                 )
                 break
+    # The final sample can complete the hold exactly at the requested horizon.
+    if (
+        status == "timeout"
+        and standing
+        and held_since is not None
+        and np.max(np.abs(state)) < STANDING_TOLERANCE
+        and time - held_since >= 0.5 - 1e-12
+    ):
+        status, reason = (
+            "standing",
+            "Both state components stayed below 1e-6 for 0.5 seconds.",
+        )
     data = np.asarray(records)
     summary = {
         "status": status,
@@ -408,10 +464,15 @@ def animate(result, output, fps=25, show=False, speed=0.5):
         title.set_text(
             f"{mode} | t = {result['time'][index]:.2f} s | {result['steps'][index]} footstrikes"
         )
+        leg_note = (
+            "Swing leg held clear; landing angle retained"
+            if result["standing"][index]
+            else f"Landing alpha: {np.degrees(result['alpha'][index]):.2f} degrees"
+        )
         readout.set_text(
             f"Angle: {state[index, 0]: .3f} rad     "
             f"Angular velocity: {state[index, 1]: .3f} rad/s     "
-            f"Ankle torque: {result['torque'][index]: .3f} N m"
+            f"Ankle torque: {result['torque'][index]: .3f} N m\n{leg_note}"
         )
         trail.set_data(state[: index + 1, 0], state[: index + 1, 1])
         marker.set_data([state[index, 0]], [state[index, 1]])

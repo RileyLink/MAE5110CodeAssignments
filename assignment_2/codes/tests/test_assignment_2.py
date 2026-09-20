@@ -11,12 +11,15 @@ def test_passive_energy_and_torque_power():
     p = model.generate_params()
     state = np.array([0.2, 1.3])
     p["ankle_torque"] = 0.2
+    # eps is a small time-like perturbation along the continuous stance field.
+    # This state is away from touchdown; no impact reset enters the derivative.
     eps = 1e-6
     derivative = model.dynamics(0, state, p)
     power = (
         model.calculate_energy(state + eps * derivative, p)
         - model.calculate_energy(state - eps * derivative, p)
     ) / (2 * eps)
+    # approx compares floating-point values within a tolerance, not exact equality.
     assert power == pytest.approx(0.2 * state[1], abs=1e-8)
     p["ankle_torque"] = 0.0
     after = state.copy()
@@ -41,13 +44,19 @@ def test_impact_preserves_hub_position_and_dissipates_energy(alpha):
     lost = model.calculate_energy(before, p) - (
         model.calculate_energy(after, p) + mass * p["gravity"] * foot[1]
     )
+    # Projection gives omega+ = cos(2*alpha)*omega-; hence this exact energy loss.
+    # The foot-height term above keeps both energies in the same world reference.
     assert lost == pytest.approx(
         0.5 * mass * length**2 * before[1] ** 2 * np.sin(2 * alpha) ** 2
     )
     assert model.event_guard(before - [0.01, 0], before + [0.01, 0], p)
     assert not model.event_guard([before[0] + 0.01, -1], [before[0] - 0.01, -1], p)
+    # An inclusive bracket alone would incorrectly accept no angle change.
+    assert not model.event_guard(before, before, p)
 
 
+# Cases cover upright/near-upright capture, reverse motion, off-section starts,
+# and the analytically derived 1-, 2-, and 3-impact section intervals.
 @pytest.mark.parametrize(
     "state, steps",
     [
@@ -71,6 +80,9 @@ def test_controlled_stopping(state, steps):
     assert result["torque"].min() >= -0.981 - 1e-12
     assert result["torque"].max() <= 0.4905 + 1e-12
     assert np.all(result["torque"][~result["standing"]] == 0)
+    # Alpha remains allowed even after the swing leg disappears in the animation.
+    assert np.all(result["alpha"] >= np.pi / 8)
+    assert np.all(result["alpha"] <= np.pi / 7)
     for event in result["summary"]["events"]:
         assert np.pi / 8 <= event["alpha"] <= np.pi / 7
         assert event["pre"][0] == pytest.approx(0.06 + event["alpha"], abs=1e-12)
@@ -92,3 +104,8 @@ def test_failure_and_timeout_are_not_reported_as_standing():
     assert experiment.simulate((0, 4), duration=0.1)["summary"]["status"] == "timeout"
     with pytest.raises(ValueError):
         experiment.simulate((np.nan, 0))
+
+
+def test_standing_confirmation_at_exact_duration():
+    assert experiment.simulate((0, 0), duration=0.499)["summary"]["status"] == "timeout"
+    assert experiment.simulate((0, 0), duration=0.5)["summary"]["status"] == "standing"

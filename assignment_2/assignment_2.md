@@ -1,6 +1,6 @@
 # Assignment 2: Inverted Pendulum Walker
 
-The report is organized with `codes/` for implementation and tests and `figures/` for generated plots, animations, and numerical results. Run the commands below from the repository root. Image and file links are relative to this report.
+The report is organized with `codes/` for implementation and tests and `figures/` for generated plots, animations, and numerical results. Run the commands below from the repository root. Image and file links are relative to this report. A compact run guide and script dependency order are in [README.md](README.md).
 
 ## 1. Model sketches and state-space geometry
 
@@ -324,7 +324,7 @@ Reproduce the sweep and both figures with:
 uv run python assignment_2/codes/validate_roa.py
 ```
 
-The script saves the [numerical summary](figures/numerical_roa_summary.json), both embedded PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. The large NPZ is regenerated locally; the figures and summary are included in the repository.
+The script saves the [numerical summary](figures/numerical_roa_summary.json), both embedded PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. It also exports `figures/numerical_roa_trials.csv` (one row per initial state) and `figures/roa_example_trajectories.csv` (time, angle, velocity, and torque for each example). The large CSV/NPZ files are regenerated locally; the figures and summary are included in the repository.
 
 ## 3. Poincaré map and uniform-grid lookup policy
 
@@ -618,7 +618,7 @@ Reproduce these experiments with `uv run python assignment_2/codes/final_traject
 
 The animation above displays the latest generated run; running either example below regenerates its specified output.
 
-`codes/models/inverted_pendulum_walker.py` implements the parameter defaults, stance dynamics with ankle torque, forward touchdown guard, impact reset, and stance-foot-relative total mechanical energy. `codes/assignment_2.py` runs the model with RK4, localizes touchdown and forward section crossings by bisection, and updates the world stance-foot position at impact. The hub position remains continuous through the reset. Once the analytical RoA guard activates, the swing leg is held clear and saturated feedback is recomputed at every RK4 stage.
+`codes/models/inverted_pendulum_walker.py` implements the parameter defaults, stance dynamics with ankle torque, forward touchdown guard, impact reset, and stance-foot-relative total mechanical energy. `codes/assignment_2.py` runs the model with RK4, localizes touchdown and forward section crossings by bisection, and updates the world stance-foot position at impact. The hub position remains continuous through the reset. Once the analytical RoA guard activates, the swing leg is held clear and saturated feedback is recomputed at every RK4 stage. The animation hides the swing leg; it does not set $\alpha=0$. The stored landing angle remains in $[\pi/8,\pi/7]$, inclusive, even during standing. It is $\theta$, the stance angle from vertical, that converges to zero. Thus the final single-leg drawing does not imply a violation of the landing-angle bounds.
 
 Run the three-step example and generate `figures/walker.gif`:
 
@@ -636,4 +636,4 @@ The simulation accepts finite initial angles and velocities. At forward section 
 
 The GIF shows the actual trajectory at half speed by default (`--speed 0.5`; use `--speed 1` for real time). The default 25-frame/s animation uses fixed world axes covering the full trajectory, so both horizontal travel and vertical motion remain visible without camera jumps. Persistent graphical objects keep the layout stable. A JSON summary and NPZ trajectory are saved beside it, reporting `standing`, `fallen`, `invalid_initial_pose`, `step_limit`, or `timeout`. The default time limit is 15 s; `--duration` changes it and `--no-animation` saves only the numerical outputs. Numerical standing requires both state components to remain below $10^{-6}$ for 0.5 s.
 
-For $(0,4)$ with $\Delta t=0.001$ s, the implemented model produces three footstrikes, RoA entry at 1.072198501 s, and confirmed standing at 6.057198501 s. Automated checks cover energy/power balance, impact dissipation and hub continuity, forward-only touchdown, ten stopping initial states, torque limits, timestep refinement, and explicit failure/timeout handling. Run them with `uv run python -m pytest assignment_2/codes/tests/test_assignment_2.py -q` (15 tests passed).
+For $(0,4)$ with $\Delta t=0.001$ s, the implemented model produces three footstrikes, RoA entry at 1.072198501 s, and confirmed standing at 6.057198501 s. Automated checks cover energy/power balance, impact dissipation and hub continuity, forward-only touchdown, ten stopping initial states, torque limits, timestep refinement, and explicit failure/timeout handling. Run them with `uv run python -m pytest assignment_2/codes/tests/test_assignment_2.py -q` (16 tests passed, including standing confirmation exactly at the simulation horizon and angle bounds throughout standing).

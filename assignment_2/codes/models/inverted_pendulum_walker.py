@@ -17,16 +17,17 @@ def generate_params():
 
 
 def dynamics(t, state, params):
-    """Continuous stance dynamics; positive ankle torque increases theta."""
+    """Continuous stance dynamics; positive ankle torque increases theta.
+
+    ``get`` returns the supplied torque (including nonzero values); its default
+    0.0 is used only if the key is absent. The controller updates this parameter
+    at each RK4 stage. Arrays of torques/states also support the RoA sweep.
+    """
     theta, omega = state
     length, mass = params["length"], params["mass"]
-    return np.array(
-        [
-            omega,
-            params["gravity"] / length * np.sin(theta)
-            + params.get("ankle_torque", 0.0) / (mass * length**2),
-        ]
-    )
+    gravity_acceleration = params["gravity"] / length * np.sin(theta)
+    torque_acceleration = params.get("ankle_torque", 0.0) / (mass * length**2)
+    return np.array([omega, gravity_acceleration + torque_acceleration])
 
 
 def event_guard(previous_state, next_state, params):
@@ -34,6 +35,9 @@ def event_guard(previous_state, next_state, params):
 
     The integrator must locate the crossing before applying event_dynamics.
     Reverse motion is not a forward touchdown.
+    This is the touchdown guard, not the policy section at theta=0, omega>0.
+    The explicit strict angle increase rejects two identical samples at target;
+    the inclusive bracket alone would accept that degenerate case.
     """
     target = params["incline"] + params["angle_of_attack"]
     return bool(
@@ -56,8 +60,8 @@ def calculate_energy(state, params):
     reference changes; include its world height when comparing world energies.
     """
     theta, omega = np.asarray(state)
-    m, length, g = params["mass"], params["length"], params["gravity"]
-    return 0.5 * m * length**2 * omega**2 + m * g * length * np.cos(theta)
+    mass, length, gravity = params["mass"], params["length"], params["gravity"]
+    return 0.5 * mass * length**2 * omega**2 + mass * gravity * length * np.cos(theta)
 
 
 def visualize(
