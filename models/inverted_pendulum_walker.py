@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.animation import FuncAnimation
 import time
+from matplotlib.patches import Patch
+from integrators.rk4 import _rk4_step
 
 
 def generate_params():
@@ -99,7 +101,6 @@ def event_dynamics(state, params):
 
     return np.array([theta, theta_dot])
 
-
 def calculate_energy(state, params):
     gravity = params["gravity"]
     length = params["length"]
@@ -124,16 +125,7 @@ def calculate_torque(state,params):
     new_ankle_torque = -mass*gravity*length*np.sin(state[0])-K_p*state[0]-K_d*state[1]
     return np.clip(new_ankle_torque,tau_lower_bound,tau_upper_bound)
 
-
-def plot_controller_roa(theta_limits,theta_dot_limits,n_theta,n_theta_dot,params,sim_time,timestep,show=False):
-    def rk4_step(time, state, timestep, dynamics, params):
-        """Perform one RK4 integration step."""
-        k1 = dynamics(time, state, params)
-        k2 = dynamics(time + timestep / 2,state + k1 * timestep / 2,params,)
-        k3 = dynamics(time + timestep / 2,state + k2 * timestep / 2,params,)
-        k4 = dynamics(time + timestep,state + k3 * timestep,params,)
-        return state + (timestep / 6) * (k1 + 2 * k2 + 2 * k3 + k4) 
-    
+def plot_controller_roa(theta_limits,theta_dot_limits,n_theta,n_theta_dot,params,sim_time,timestep,show=False):    
     BALANCED = 0
     FAILURE = 1
     INCONCLUSIVE = 2
@@ -160,7 +152,7 @@ def plot_controller_roa(theta_limits,theta_dot_limits,n_theta,n_theta_dot,params
                 params["ankle_torque"] = calculate_torque(current_state,params)
 
                 current_time = step * timestep
-                next_state = rk4_step(current_time,current_state,timestep,dynamics,params)
+                next_state = _rk4_step(current_time,current_state,timestep,dynamics,params)
 
                 if event_guard(current_state,next_state,params):
                     outcome = FAILURE
@@ -243,7 +235,92 @@ def state_is_in_roa(state, theta_values, theta_dot_values, classification_grid):
     theta_index = np.argmin(np.abs(theta_values - theta))
     theta_dot_index = np.argmin(np.abs(theta_dot_values - theta_dot))
 
-    return (classification_grid[theta_dot_index, theta_index] == 0)  
+    return (classification_grid[theta_dot_index, theta_index] == 0) 
+
+
+def simulate_poincare_step(theta_dot_0,angle_of_attack,params,roa_theta_values,roa_theta_dot_values,classification_grid,timestep=1e-3,sim_time=5.0):
+    '''
+    Returns next_velocity, did we reach ROA, did we fail
+
+    Although, if we just look at lookuptable we can tell nans are fails, -100 are ROA, and other numbers are velocities    
+    '''
+    params["angle_of_attack"] = angle_of_attack
+    params["ankle_torque"] = 0.0
+
+    current_state = np.array([0.0, theta_dot_0])
+    sim_steps = int(sim_time / timestep)
+
+    # This initial condition may already be inside the RoA.
+    if state_is_in_roa(current_state,roa_theta_values,roa_theta_dot_values,classification_grid):
+        return -100, True, False
+
+    has_collided = False
+    for step in range(sim_steps):
+        current_time = step * timestep
+        next_state = _rk4_step(current_time,current_state,timestep,dynamics,params)
+        collision = event_guard(current_state,next_state,params)
+        if collision:
+            current_state = event_dynamics(next_state,params)
+            has_collided = True
+            if state_is_in_roa(current_state,roa_theta_values,roa_theta_dot_values,classification_grid):
+                return -100, True, False
+            continue
+
+        # After one collision, the next negative-to-positive crossing is the next Poincare iterate.
+        crossed_section = (has_collided and current_state[0] < 0 and next_state[0] >= 0 and next_state[1] > 0)
+
+        if crossed_section:
+            section_state = np.array([0.0, next_state[1]])
+            reached_roa = state_is_in_roa(section_state,roa_theta_values,roa_theta_dot_values,classification_grid)
+            return next_state[1], reached_roa, False
+
+        current_state = next_state
+
+        # The assignment says that reaching the RoA at any time is terminal.
+        if state_is_in_roa(current_state,roa_theta_values,roa_theta_dot_values,classification_grid):
+            return -100, True, False
+
+    # No next section crossing and no RoA entry before the timeout. Thus, classify as a failed step
+    return np.nan, False, True 
+
+def plot_phase_portrait(classification_grid, theta_values, theta_dot_values, state_traj, show= False):
+    balanced_region = classification_grid == 0
+    fig, ax = plt.subplots()
+
+    # Plot the balanced RoA with low opacity.
+    ax.contourf(
+        theta_values,
+        theta_dot_values,
+        balanced_region.astype(float),
+        levels=[0.5, 1.5],
+        colors=["royalblue"],
+        alpha=0.25,
+    )
+
+    # Phase trajectory: theta versus theta_dot.
+    trajectory, = ax.plot(
+        state_traj[:, 0],
+        state_traj[:, 1],
+        color="black",
+        label="State trajectory",
+    )
+
+    roa_legend = Patch(
+        facecolor="royalblue",
+        alpha=0.25,
+        label="Balanced RoA",
+    )
+
+    ax.set_xlabel(r"$\theta$ (rad)")
+    ax.set_ylabel(r"$\dot{\theta}$ (rad/s)")
+    ax.set_title("Phase Portrait")
+    ax.legend(handles=[trajectory, roa_legend])
+    ax.grid(alpha=0.2)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
 
 #####################################################################################################################
 
