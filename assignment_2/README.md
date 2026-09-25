@@ -9,11 +9,12 @@ The main report is [assignment_2.md](assignment_2.md).
 Following the assignment instructions, Git contains the Python source, Markdown,
 configuration, and a small text results summary. Generated PNG figures, GIF
 animations, NPZ data, and the compiled PDF are kept locally and ignored by Git.
-The report keeps relative image paths for local preview and PDF compilation;
-GitHub will not display those images because they are not stored in the repository.
+The source report displays a generation command for each figure rather than a
+broken image link. Hidden `LOCAL_FIGURE` comments retain the relative image paths;
+the PDF builder restores them in the locally generated `assignment_2_pdf.md`.
 
-After a fresh clone, run the generation commands below before previewing the
-report or building its PDF. Submit the locally compiled PDF to Canvas. The PDF
+After a fresh clone, run the generation commands below before building the
+illustrated PDF. Submit the locally compiled PDF to Canvas. The PDF
 builder overwrites `assignment_2/assignment_2.pdf`, so run it only when you intend
 to regenerate that document; removing artifacts from Git does not require it.
 

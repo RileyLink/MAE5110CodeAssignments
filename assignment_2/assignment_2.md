@@ -1,6 +1,6 @@
 # Assignment 2: Inverted Pendulum Walker
 
-The report is organized with `codes/` for implementation and tests and `figures/` for generated plots, animations, and numerical results. Run the commands below from the repository root. Image and file links are relative to this report. A compact run guide and script dependency order are in [README.md](README.md).
+The report is organized with `codes/` for implementation and tests and `figures/` for generated plots, animations, and numerical results. Run the commands below from the repository root. This source-only version shows local-generation instructions instead of embedded images. The PDF builder restores the figures from the hidden `LOCAL_FIGURE` markers after the image files have been generated. A compact run guide and script dependency order are in [README.md](README.md).
 
 ## 1. Model sketches and state-space geometry
 
@@ -26,7 +26,13 @@ The sketches below use $\tau=0$ to show the passive stance dynamics. The swing f
 
 ### 1.2 Walker snapshots
 
+**Local figure:** Walker snapshots: mid-stance, two touchdown choices, and a backward-fall failure.
+
+Generate `figures/sketch_snapshots.png` with `uv run python assignment_2/codes/sketch_assignment_2.py`.
+
+<!-- LOCAL_FIGURE
 ![Walker snapshots: mid-stance, two touchdown choices, and a backward-fall failure.](figures/sketch_snapshots.png)
+-->
 
 - **A — Mid-stance:** $\theta=0$ and $\dot\theta=1.5$ rad/s. The mass is directly above the stance foot but continues moving forward; this is not standing equilibrium.
 - **B — Touchdown with $\alpha=\pi/8$:** the forward swing foot reaches the slope at $\theta^-=\gamma+\alpha\approx0.4527$ rad.
@@ -78,7 +84,13 @@ $$
 
 A forward-moving state behind upright needs energy strictly above $mg\ell$ to pass through upright with positive speed. At the threshold it approaches upright asymptotically; below it, it turns back. This is a passive-energy statement, not a characterization of the controlled RoA.
 
+**Local figure:** Passive phase portrait with labeled snapshots, touchdown guards, and impact resets.
+
+Generate `figures/sketch_phase_space.png` with `uv run python assignment_2/codes/sketch_assignment_2.py`.
+
+<!-- LOCAL_FIGURE
 ![Passive phase portrait with labeled snapshots, touchdown guards, and impact resets.](figures/sketch_phase_space.png)
+-->
 
 The gray arrows show continuous stance flow. A, B−, C−, and D correspond to the physical snapshots; B+ and C+ are their post-impact states. The colored forward curves follow the conserved energy from A. The red curve reaches D, turns, and falls backward. Background flow is the unconstrained pendulum field; actual walker motion must terminate or reset at the appropriate events.
 
@@ -92,7 +104,7 @@ From the repository root, run:
 uv run python assignment_2/codes/sketch_assignment_2.py
 ```
 
-The script generates both figures under `figures/`. Images and the GIF embedded in this report are generated locally and ignored by Git, following the assignment instructions. Run the reproduction commands before local preview or PDF compilation; GitHub does not display the uncommitted images. The code can regenerate all artifacts.
+The script generates both figures under `figures/`. Figures and the GIF are generated locally and ignored by Git, following the assignment instructions. The source report lists the generating command for each artifact, so the GitHub page has no broken image placeholders. Generate the artifacts before building the illustrated PDF. The code can regenerate all artifacts.
 
 ## 2. Standing controller and region of attraction
 
@@ -134,7 +146,13 @@ $$
 
 The shaded interior satisfies $\omega_-(\theta)<\dot\theta<\omega_+(\theta)$. The boundaries approach tilted balance states under maximal opposing torque and are excluded from upright capture. Beyond the balance angles, recovery requires inward velocity: the balance angles restrict recovery from rest, not all moving states. This plot shows a finite portion of the ideal standing capture set; additional physical constraints would need separate treatment.
 
+**Local figure:** Analytical torque-limited capture region and detail near upright.
+
+Generate `figures/analytical_capture_region.png` with `uv run python assignment_2/codes/plot_analytical_capture.py`.
+
+<!-- LOCAL_FIGURE
 ![Analytical torque-limited capture region and detail near upright.](figures/analytical_capture_region.png)
+-->
 
 At $\theta=0$, the interval is $-0.15662<\dot\theta<0.31334$ rad/s. Its forward portion is $0<\dot\theta<0.31334$ rad/s. These values follow directly from the formulas, with no trajectory simulations.
 
@@ -293,7 +311,13 @@ Both timesteps produce the following results:
 
 There are **zero disagreements** between the numerical convergence labels and analytical interior membership, and **zero label changes** after halving the timestep. Across interior trials, the sustained-tolerance onset changes by at most 0.002 s. No interior trajectory crosses a curved boundary at the checked samples. Across the interior trials, the smallest sampled velocity margin to either boundary is $4.70\times10^{-6}$ rad/s. At 15 s, the refined run has maximum errors $|\theta|<1.55\times10^{-17}$ rad and $|\omega|<4.82\times10^{-17}$ rad/s. The latest onset of sustained standing tolerance is 7.391 s. Sampled torque remains in $[-0.981,0.4905]$ N m, and clipping enforces the same limits at each RK4 stage.
 
+**Local figure:** Numerical RoA on a uniform state grid and six controlled stance trajectories.
+
+Generate `figures/numerical_roa.png` with `uv run python assignment_2/codes/validate_roa.py`.
+
+<!-- LOCAL_FIGURE
 ![Numerical RoA on a uniform state grid and six controlled stance trajectories.](figures/numerical_roa.png)
+-->
 
 The left panel colors the initial states by the simulation result, with analytical boundaries overlaid afterward for comparison. The right panel shows six trajectories; circles mark initial states, arrows indicate time direction, and the star marks upright standing.
 
@@ -314,7 +338,13 @@ The six examples include recovery from large inward-moving angles and initial ve
 
 Here the onset is the first sample of the final uninterrupted interval satisfying both tolerances; confirmation requires another 0.5 s. T2 and T4 start 1% of the local velocity width above the lower boundary; T3 and T5 start 1% below the upper boundary. T1 and T6 start midway between the boundaries. Thus the examples exercise both torque saturation directions and recovery from both sides of upright.
 
+**Local figure:** Angle, velocity, and torque for six controlled stance trajectories.
+
+Generate `figures/roa_controlled_trajectories.png` with `uv run python assignment_2/codes/validate_roa.py`.
+
+<!-- LOCAL_FIGURE
 ![Angle, velocity, and torque for six controlled stance trajectories.](figures/roa_controlled_trajectories.png)
+-->
 
 Dashed horizontal lines show the torque limits. The six example simulations and plots end at 6 s, after every example has satisfied the standing tolerances for at least 0.5 s. The separate RoA grid validation in Section 2.3 retains its 15 s horizon. Angle and velocity need not decrease monotonically: the controller first brakes or reverses motion, then approaches the unsaturated stable dynamics near upright.
 
@@ -324,7 +354,7 @@ Reproduce the sweep and both figures with:
 uv run python assignment_2/codes/validate_roa.py
 ```
 
-The script saves the [numerical summary](figures/numerical_roa_summary.json), both embedded PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. It also exports `figures/numerical_roa_trials.csv` (one row per initial state) and `figures/roa_example_trajectories.csv` (time, angle, velocity, and torque for each example). The figures and large CSV/NPZ files are generated locally and ignored by Git; only the small text summary is included in the repository.
+The script saves the [numerical summary](figures/numerical_roa_summary.json), both locally generated PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. It also exports `figures/numerical_roa_trials.csv` (one row per initial state) and `figures/roa_example_trajectories.csv` (time, angle, velocity, and torque for each example). The figures and large CSV/NPZ files are generated locally and ignored by Git; only the small text summary is included in the repository.
 
 ## 3. Poincaré map and uniform-grid lookup policy
 
@@ -454,7 +484,13 @@ Only the action is selected through this index. Propagate the actual, unrounded 
 
 The two node spacings are both $\Delta\omega=2.2147234590$ rad/s. Nearest-node lookup switches actions at $\Omega/4=1.1073617295$ rad/s, which lies inside the one-step capture overlap. Thus it preserves the minimum step counts with this uniform grid. The endpoint nearest-node cells have half the width of interior cells; “uniform” describes the node spacing.
 
+**Local figure:** Fine-grid action costs with two equal velocity intervals, three stored actions, and executed stopping counts.
+
+Generate `figures/lookup_state_action.png` with `uv run python assignment_2/codes/build_lookup_policy.py`.
+
+<!-- LOCAL_FIGURE
 ![Fine-grid action costs with two equal velocity intervals, three stored actions, and executed stopping counts.](figures/lookup_state_action.png)
+-->
 
 The top panel overlays the three nodes and two equal grid intervals on the fine-grid state–action map. The middle panel shows stored actions and nearest-node action selection. The lower panel shows executed stopping counts. The equal grid intervals are $[0,2.2147234590]$ and $[2.2147234590,4.4294469181]$; they are not constant-action regions. Standing control overrides lookup in the green region. Reproduce with `uv run python assignment_2/codes/plot_uniform_velocity.py`.
 
@@ -569,7 +605,13 @@ $$
 
 The resulting capture state is $(-0.332699,1.185720)$. This sequence maximizes the number of footstrikes before first RoA entry, not elapsed walking time. RoA entry triggers standing control immediately; deliberately refusing to balance after entry does not count as a longer successful sequence.
 
+**Local figure:** Minimum and maximum footstrike trajectories from the same initial state.
+
+Generate `figures/final_phase_trajectories.png` with `uv run python assignment_2/codes/final_trajectories.py`.
+
+<!-- LOCAL_FIGURE
 ![Minimum and maximum footstrike trajectories from the same initial state.](figures/final_phase_trajectories.png)
+-->
 
 The blue curves are passive stance segments. Orange arrows are instantaneous impact resets, labeled by footstrike number. Purple curves start at RoA entry and converge toward $(0,0)$. The phase plots extend far enough left to include both post-impact angles.
 
@@ -599,7 +641,13 @@ After capture, hold the swing leg clear and apply the saturated controller with 
 
 Both controlled trajectories stayed between the analytical RoA boundaries at all computed samples. At the end of the 0.5 s confirmation interval, both had $|\theta|<6.74\times10^{-8}$ rad and $|\dot\theta|<2.11\times10^{-7}$ rad/s. All sampled torques respected the prescribed bounds.
 
+**Local figure:** Angle, angular velocity, and ankle torque versus time for both sequences.
+
+Generate `figures/final_time_trajectories.png` with `uv run python assignment_2/codes/final_trajectories.py`.
+
+<!-- LOCAL_FIGURE
 ![Angle, angular velocity, and ankle torque versus time for both sequences.](figures/final_time_trajectories.png)
+-->
 
 ### 5.4 Numerical method, refinement, and step-count visualization
 
@@ -614,9 +662,15 @@ Reproduce these experiments with `uv run python assignment_2/codes/final_traject
 
 ### 5.5 Implemented model and controlled animation
 
-![Controlled walking followed by torque-limited standing, shown at half speed.](figures/walker.gif)
+**Local animation:** Controlled walking followed by torque-limited standing, shown at half speed.
 
-The animation above displays the latest generated run; running either example below regenerates its specified output.
+Generate `figures/walker.gif` with `uv run python assignment_2.py --theta 0 --omega 4`.
+
+<!-- LOCAL_FIGURE
+![Controlled walking followed by torque-limited standing, shown at half speed.](figures/walker.gif)
+-->
+
+Open `figures/walker.gif` locally to view the latest generated run; running either example below regenerates its specified output.
 
 `codes/models/inverted_pendulum_walker.py` implements the parameter defaults, stance dynamics with ankle torque, forward touchdown guard, impact reset, and stance-foot-relative total mechanical energy. `codes/assignment_2.py` runs the model with RK4, localizes touchdown and forward section crossings by bisection, and updates the world stance-foot position at impact. The hub position remains continuous through the reset. Once the analytical RoA guard activates, the swing leg is held clear and saturated feedback is recomputed at every RK4 stage. The animation hides the swing leg; it does not set $\alpha=0$. The stored landing angle remains in $[\pi/8,\pi/7]$, inclusive, even during standing. It is $\theta$, the stance angle from vertical, that converges to zero. Thus the final single-leg drawing does not imply a violation of the landing-angle bounds.
 
