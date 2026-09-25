@@ -4,6 +4,19 @@ Run commands from the repository root. `uv run` installs the Python dependencies
 from `pyproject.toml`; Pandoc and XeLaTeX are separate requirements for the PDF.
 The main report is [assignment_2.md](assignment_2.md).
 
+## Source files and generated artifacts
+
+Following the assignment instructions, Git contains the Python source, Markdown,
+configuration, and a small text results summary. Generated PNG figures, GIF
+animations, NPZ data, and the compiled PDF are kept locally and ignored by Git.
+The report keeps relative image paths for local preview and PDF compilation;
+GitHub will not display those images because they are not stored in the repository.
+
+After a fresh clone, run the generation commands below before previewing the
+report or building its PDF. Submit the locally compiled PDF to Canvas. The PDF
+builder overwrites `assignment_2/assignment_2.pdf`, so run it only when you intend
+to regenerate that document; removing artifacts from Git does not require it.
+
 ## Start here
 
 ```sh
@@ -42,6 +55,7 @@ the larger reference-grid search can take substantially longer than a trajectory
 | Final 2-node versus 3-node check | `assignment_2/codes/validate_uniform_velocity.py` | Uniform-policy CSV, validation JSON/NPZ |
 | Final uniform-grid figure | `assignment_2/codes/plot_uniform_velocity.py` | `lookup_state_action.png` |
 | Minimum/maximum footsteps | `assignment_2/codes/final_trajectories.py` | Two trajectory figures and summary |
+| Walking animation | `assignment_2.py --theta 0 --omega 4` | `walker.gif`, JSON, and NPZ |
 | PDF from current Markdown | `assignment_2/codes/build_pdf.py` | `assignment_2/assignment_2.pdf` |
 
 The final controller uses three uniform velocity nodes and two endpoint landing

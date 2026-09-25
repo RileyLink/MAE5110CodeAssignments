@@ -92,7 +92,7 @@ From the repository root, run:
 uv run python assignment_2/codes/sketch_assignment_2.py
 ```
 
-The script generates both figures under `figures/`. Images and the GIF embedded in this report are included in the repository so that GitHub can display them. Other generated numerical results remain ignored; the code can regenerate all artifacts.
+The script generates both figures under `figures/`. Images and the GIF embedded in this report are generated locally and ignored by Git, following the assignment instructions. Run the reproduction commands before local preview or PDF compilation; GitHub does not display the uncommitted images. The code can regenerate all artifacts.
 
 ## 2. Standing controller and region of attraction
 
@@ -324,7 +324,7 @@ Reproduce the sweep and both figures with:
 uv run python assignment_2/codes/validate_roa.py
 ```
 
-The script saves the [numerical summary](figures/numerical_roa_summary.json), both embedded PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. It also exports `figures/numerical_roa_trials.csv` (one row per initial state) and `figures/roa_example_trajectories.csv` (time, angle, velocity, and torque for each example). The large CSV/NPZ files are regenerated locally; the figures and summary are included in the repository.
+The script saves the [numerical summary](figures/numerical_roa_summary.json), both embedded PNGs, and `figures/numerical_roa_data.npz` containing initial states, convergence labels at both timesteps, refined terminal states, and the six full example trajectories. It also exports `figures/numerical_roa_trials.csv` (one row per initial state) and `figures/roa_example_trajectories.csv` (time, angle, velocity, and torque for each example). The figures and large CSV/NPZ files are generated locally and ignored by Git; only the small text summary is included in the repository.
 
 ## 3. Poincaré map and uniform-grid lookup policy
 
