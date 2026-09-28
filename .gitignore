@@ -10,3 +10,12 @@ assignments_tex/
 # Assignment 2 figures, numerical tables, and compiled report are reproducible.
 output/
 tmp/pdfs/
+
+# Keep generated Assignment 2 figures, animations, and data local.
+# The small text summary is retained; binary artifacts are regenerated from code.
+assignment_2/figures/*
+!assignment_2/figures/numerical_roa_summary.json
+
+assignment_2/assignment_2_pdf.md
+
+assignment_2/assignment_2.pdf
